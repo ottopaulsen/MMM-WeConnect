@@ -1,0 +1,14 @@
+{
+  "name": "MMM-VW-Connect",
+  "version": "0.0.1",
+  "description": "Show data from your car via VW Connect",
+  "author": "Otto Paulsen",
+  "dependencies": {
+    "jsonpointer": "^4.0.1",
+    "node": "^12.7.0",
+    "node-fetch": "^2.6.0",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4",
+    "requests": "^0.2.2"
+  }
+}
