@@ -43,19 +43,28 @@ module.exports = NodeHelper.create({
     },
 
     startReadingData: function () {
-        this.resources.forEach(resource => {
-            this.readCarData(resource);
+        this.readData();
+        setInterval(() => {
+            this.readData();
+        }, 60000);
+    },
+
+    readData: function () {
+        this.loginWeConnect(this.config, () => {
+            this.resources.forEach(resource => {
+                this.readCarData(resource);
+            });
         });
     },
 
-    loginWeConnect: async function (config, retries = 1) {
+    loginWeConnect: async function (config, successFunction, retries = 1) {
         console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
                 console.log(this.name + ': Logged in to WeConnect');
                 this.loaded = true;
-                this.startReadingData();
+                successFunction();
             })
             .catch(err => {
                 console.log(this.name + ': Error logging in weconnect: ', err);
@@ -82,17 +91,17 @@ module.exports = NodeHelper.create({
                 })
                 console.log('Sending data: ', carData);
                 this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-                console.log('Waiting ' + resource.intervalSeconds + ' seconds to call again');
-                setTimeout(() => {
-                    this.readCarData(resource);
-                }, 15000);
+                // console.log('Waiting ' + resource.intervalSeconds + ' seconds to call again');
+                // setTimeout(() => {
+                //     this.readCarData(resource);
+                // }, 15000);
             })
             .catch(err => {
                 console.log('Error reading car data: ', err);
-                setTimeout(() => {
-                    this.readCarData(resource);
-                }, 15000);
-                console.log('Trying again in ' + + 'seconds to call again');
+                // setTimeout(() => {
+                //     this.readCarData(resource);
+                // }, 15000);
+                // console.log('Trying again in ' + + 'seconds to call again');
             })
     },
 
@@ -102,7 +111,8 @@ module.exports = NodeHelper.create({
         if (notification === 'WECONNECT_CONFIG') {
             var config = payload;
             this.config = config;
-            this.loginWeConnect(config);
+            this.startReadingData();
+            // this.loginWeConnect(config);
         }
     },
 });
