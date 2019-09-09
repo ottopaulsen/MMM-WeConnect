@@ -81,7 +81,7 @@ module.exports = NodeHelper.create({
                 console.log(this.name + ': Error logging in weconnect: ', err);
                 if (retries <= 2) {
                     console.log(this.name + 'Retrying');
-                    self.loginWeConnect(config, retries + 1);
+                    self.loginWeConnect(config, successFunction, retries + 1);
                 }
             });
     },
@@ -92,10 +92,18 @@ module.exports = NodeHelper.create({
         weconnect.api(resource.path)
             .then(data => {
                 console.log('Got data: ', JSON.stringify(JSON.parse(data),null,2));
+
                 if (resource.path == '/-/cf/get-location') {
                    driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
                    carData.set("driving", {label: "Driving", value: driving, suffix: ""});
                 }
+
+                carData.set("apiConnection", {
+                    label: "API Connection", 
+                    value: jsonpointer.get(JSON.parse(data), '/errorCode') == 0 ? "OK" : "ERROR",
+                    suffix: ""
+                });
+
                 resource.values.forEach((value, key) => {
                     res = jsonpointer.get(JSON.parse(data), value.sourceKey);
                     carData.set(value.key, {
