@@ -1,26 +1,29 @@
 const NodeHelper = require("node_helper");
 const weconnect = require("./weconnect");
 const jsonpointer = require("jsonpointer");
+const internetAvailable = require("internet-available");
 
 let carData = new Map();
 
 module.exports = NodeHelper.create({
 
     resources: [
-        // {intervalSeconds: 10, path: '/-/msgc/get-new-messages', values: [
+        // { path: '/-/msgc/get-new-messages', values: [
         // ]},
-        // {intervalSeconds: 10, path: '/-/vsr/request-vsr', values: [
+        // { path: '/-/vsr/request-vsr', values: [
         // ]},
         {
-            intervalSeconds: 120, path: '/-/vsr/get-vsr', values: [
+             path: '/-/vsr/get-vsr', values: [
                 { sourceKey: '/vehicleStatusData/totalRange', key: 'range', label: 'Range', suffix: 'km' },
                 { sourceKey: '/vehicleStatusData/batteryLevel', key: 'battery', label: 'Battery level', suffix: '%' },
             ]
         },
-        // {intervalSeconds: 10, path: '/-/cf/get-location', values: [
-        // ]},
+        { path: '/-/cf/get-location', values: [
+            { sourceKey: '/position/lat', key: 'latitude', label: 'Latitude', suffix: '' },
+            { sourceKey: '/position/lng', key: 'longitude', label: 'Longitude', suffix: '' },
+        ]},
         {
-            intervalSeconds: 300, path: '/-/vehicle-info/get-vehicle-details', values: [
+             path: '/-/vehicle-info/get-vehicle-details', values: [
                 { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/0', key: 'lastConectionDate', label: 'Last connection date', suffix: '' },
                 { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/1', key: 'lastConectionTime', label: 'Last connection time', suffix: '' },
                 { sourceKey: '/vehicleDetails/distanceCovered', key: 'distanceCovered', label: 'Distance', suffix: 'km' },
@@ -28,10 +31,10 @@ module.exports = NodeHelper.create({
             ]
         },
         {
-            intervalSeconds: 60, path: '/-/emanager/get-emanager', values: [
+             path: '/-/emanager/get-emanager', values: [
                 { sourceKey: '/EManager/rbc/status/chargingState', key: 'charging', label: 'Charging', suffix: '' },
                 { sourceKey: '/EManager/rbc/status/chargingRemaningHour', key: 'chargingRemainingHour', label: 'Remaining hours', suffix: 'h' },
-                { sourceKey: '/EManager/rbc/status/chargingRemaningMinute', key: 'chargingRemainingMinute', label: 'Remaining minutes', suffix: '0' },
+                { sourceKey: '/EManager/rbc/status/chargingRemaningMinute', key: 'chargingRemainingMinute', label: 'Remaining minutes', suffix: 'm' },
                 { sourceKey: '/EManager/rbc/status/pluginState', key: 'connectionState', label: 'Connection state', suffix: '' },
             ]
         }
@@ -46,14 +49,22 @@ module.exports = NodeHelper.create({
         this.readData();
         setInterval(() => {
             this.readData();
-        }, 60000);
+        }, this.config.refreshIntervalSeconds * 1000);
     },
 
     readData: function () {
-        this.loginWeConnect(this.config, () => {
-            this.resources.forEach(resource => {
-                this.readCarData(resource);
+        self = this;
+        internetAvailable().then(function(){
+                carData.set("magicMirrorOnline", true);
+                self.loginWeConnect(self.config, () => {
+                    self.resources.forEach(resource => {
+                        self.readCarData(resource);
+                    });
             });
+        }).catch(function(){
+            console.log('No internet connection');
+            carData.set("magicMirrorOnline", false);
+            return;
         });
     },
 
@@ -80,7 +91,11 @@ module.exports = NodeHelper.create({
 
         weconnect.api(resource.path)
             .then(data => {
-                console.log('Got data: ', data);
+                console.log('Got data: ', JSON.stringify(JSON.parse(data),null,2));
+                if (resource.path == '/-/cf/get-location') {
+                   driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
+                   carData.set("driving", {label: "Driving", value: driving, suffix: ""});
+                }
                 resource.values.forEach((value, key) => {
                     res = jsonpointer.get(JSON.parse(data), value.sourceKey);
                     carData.set(value.key, {
@@ -91,17 +106,9 @@ module.exports = NodeHelper.create({
                 })
                 console.log('Sending data: ', carData);
                 this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-                // console.log('Waiting ' + resource.intervalSeconds + ' seconds to call again');
-                // setTimeout(() => {
-                //     this.readCarData(resource);
-                // }, 15000);
             })
             .catch(err => {
                 console.log('Error reading car data: ', err);
-                // setTimeout(() => {
-                //     this.readCarData(resource);
-                // }, 15000);
-                // console.log('Trying again in ' + + 'seconds to call again');
             })
     },
 
