@@ -13,17 +13,19 @@ module.exports = NodeHelper.create({
         // { path: '/-/vsr/request-vsr', values: [
         // ]},
         {
-             path: '/-/vsr/get-vsr', values: [
+            path: '/-/vsr/get-vsr', values: [
                 { sourceKey: '/vehicleStatusData/totalRange', key: 'range', label: 'Range', suffix: 'km' },
                 { sourceKey: '/vehicleStatusData/batteryLevel', key: 'battery', label: 'Battery level', suffix: '%' },
             ]
         },
-        { path: '/-/cf/get-location', values: [
-            { sourceKey: '/position/lat', key: 'latitude', label: 'Latitude', suffix: '' },
-            { sourceKey: '/position/lng', key: 'longitude', label: 'Longitude', suffix: '' },
-        ]},
         {
-             path: '/-/vehicle-info/get-vehicle-details', values: [
+            path: '/-/cf/get-location', values: [
+                { sourceKey: '/position/lat', key: 'latitude', label: 'Latitude', suffix: '' },
+                { sourceKey: '/position/lng', key: 'longitude', label: 'Longitude', suffix: '' },
+            ]
+        },
+        {
+            path: '/-/vehicle-info/get-vehicle-details', values: [
                 { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/0', key: 'lastConectionDate', label: 'Last connection date', suffix: '' },
                 { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/1', key: 'lastConectionTime', label: 'Last connection time', suffix: '' },
                 { sourceKey: '/vehicleDetails/distanceCovered', key: 'distanceCovered', label: 'Distance', suffix: 'km' },
@@ -31,7 +33,7 @@ module.exports = NodeHelper.create({
             ]
         },
         {
-             path: '/-/emanager/get-emanager', values: [
+            path: '/-/emanager/get-emanager', values: [
                 { sourceKey: '/EManager/rbc/status/chargingState', key: 'charging', label: 'Charging', suffix: '' },
                 { sourceKey: '/EManager/rbc/status/chargingRemaningHour', key: 'chargingRemainingHour', label: 'Remaining hours', suffix: 'h' },
                 { sourceKey: '/EManager/rbc/status/chargingRemaningMinute', key: 'chargingRemainingMinute', label: 'Remaining minutes', suffix: 'm' },
@@ -54,35 +56,35 @@ module.exports = NodeHelper.create({
 
     readData: function () {
         self = this;
-        internetAvailable().then(function(){
-                carData.set("magicMirrorOnline", true);
-                self.loginWeConnect(self.config, () => {
-                    self.resources.forEach(resource => {
-                        self.readCarData(resource);
-                    });
-            });
-        }).catch(function(){
+        internetAvailable().then(function () {
+            carData.set("magicMirrorOnline", true);
+            self.loginWeConnect(self.config, (resources) => {
+                resources.forEach(resource => {
+                    self.readCarData(resource);
+                });
+            }, self.resources);
+        }).catch(function () {
             console.log('No internet connection');
-            carData.set("apiConnection", {label: "API Connection", value: "ERROR", suffix: ""});
+            carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
             console.log('Sending data: ', carData);
             self.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-    return;
+            return;
         });
     },
 
-    loginWeConnect: async function (config, successFunction, retries = 1) {
+    loginWeConnect: async function (config, successFunction, resources, retries = 1) {
         console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
-                console.log(this.name + ': Logged in to WeConnect');
-                this.loaded = true;
-                successFunction();
+                console.log(self.name + ': Logged in to WeConnect');
+                self.loaded = true;
+                successFunction(resources);
             })
             .catch(err => {
-                console.log(this.name + ': Error logging in weconnect: ', err);
+                console.log(self.name + ': Error logging in weconnect: ', err);
                 if (retries <= 2) {
-                    console.log(this.name + 'Retrying');
+                    console.log(self.name + 'Retrying');
                     self.loginWeConnect(config, successFunction, retries + 1);
                 }
             });
@@ -93,15 +95,15 @@ module.exports = NodeHelper.create({
 
         weconnect.api(resource.path)
             .then(data => {
-                console.log('Got data: ', JSON.stringify(JSON.parse(data),null,2));
+                console.log('Got data: ', JSON.stringify(JSON.parse(data), null, 2));
 
                 if (resource.path == '/-/cf/get-location') {
-                   driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
-                   carData.set("driving", {label: "Driving", value: driving, suffix: ""});
+                    driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
+                    carData.set("driving", { label: "Driving", value: driving, suffix: "" });
                 }
 
                 carData.set("apiConnection", {
-                    label: "API Connection", 
+                    label: "API Connection",
                     value: jsonpointer.get(JSON.parse(data), '/errorCode') == 0 ? "OK" : "ERROR",
                     suffix: ""
                 });
