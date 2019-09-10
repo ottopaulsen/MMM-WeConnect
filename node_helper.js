@@ -58,11 +58,11 @@ module.exports = NodeHelper.create({
         self = this;
         internetAvailable().then(function () {
             carData.set("magicMirrorOnline", true);
-            self.loginWeConnect(self.config, (resources) => {
-                resources.forEach(resource => {
-                    self.readCarData(resource);
+            self.loginWeConnect(self.config, (me) => {
+                me.resources.forEach(resource => {
+                    me.readCarData(resource);
                 });
-            }, self.resources);
+            }, self);
         }).catch(function () {
             console.log('No internet connection');
             carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
@@ -72,14 +72,14 @@ module.exports = NodeHelper.create({
         });
     },
 
-    loginWeConnect: async function (config, successFunction, resources, retries = 1) {
+    loginWeConnect: async function (config, successFunction, me, retries = 1) {
         console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
                 console.log(self.name + ': Logged in to WeConnect');
                 self.loaded = true;
-                successFunction(resources);
+                successFunction(me);
             })
             .catch(err => {
                 console.log(self.name + ': Error logging in weconnect: ', err);
