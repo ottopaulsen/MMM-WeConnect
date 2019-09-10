@@ -124,10 +124,12 @@ Module.register("MMM-WeConnect", {
                     closestPosition = configPos.name;
                 }
             }
-            if (configPos.name == config.homePosition) {
-                distanceFromHome = "" + distance + "m";
+            console.log("configPos.name = ", configPos.name, "config.homePosition = ", this.config.homePosition);
+            if (configPos.name == this.config.homePosition) {
+                distanceFromHome = "" + Math.round(distance / 100) / 10 + " km hjemmefra";
             }
         });
+        console.log("closestPosition = ", closestPosition, ", distanceFromHome = ", distanceFromHome);
         return closestPosition || distanceFromHome || "";
     },
 
@@ -209,7 +211,7 @@ Module.register("MMM-WeConnect", {
 
         // Distance covered
         if (config.showDistance && carData.has("distanceCovered")) {
-            drawing.distance.text(carData.get("distanceCovered").value + " " + carData.get("distanceCovered").suffix);
+            drawing.distance.text(carData.get("distanceCovered").value + " " + carData.get("distanceCovered").suffix).show();
         } else {
             drawing.distance.hide();
         }
