@@ -63,8 +63,10 @@ module.exports = NodeHelper.create({
             });
         }).catch(function(){
             console.log('No internet connection');
-            carData.set("magicMirrorOnline", false);
-            return;
+            carData.set("apiConnection", {label: "API Connection", value: "ERROR", suffix: ""});
+            console.log('Sending data: ', carData);
+            self.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
+    return;
         });
     },
 
