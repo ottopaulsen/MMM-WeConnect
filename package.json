@@ -6,11 +6,7 @@
   "dependencies": {
     "internet-available": "^1.0.0",
     "jsonpointer": "^4.0.1",
-    "node": "^12.7.0",
-    "node-fetch": "^2.6.0",
-    "request": "^2.88.0",
     "request-promise": "^4.2.4",
-    "requests": "^0.2.2",
     "svg.js": "^2.7.1"
   }
 }
