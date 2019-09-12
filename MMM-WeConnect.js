@@ -30,11 +30,11 @@ Module.register("MMM-WeConnect", {
 
     socketNotificationReceived: function (notification, payload) {
         var self = this;
-        console.log(self.name + ': Received socket notification ' + notification + ' with data ' + payload);
+        // console.log(self.name + ': Received socket notification ' + notification + ' with data ' + payload);
         if (notification === 'WECONNECT_CARDATA') {
             if (payload != null) {
                 self.carData = JSON.parse(payload).reduce((m, [key, val]) => m.set(key, val), new Map());
-                console.log('Parsed carData: ', self.carData);
+                // console.log('Parsed carData: ', self.carData);
                 self.updateCar(self.carDrawing, self.carData, self.config);
             } else {
                 console.log(self.name + ': WECONNECT_CARDATA - No payload');
@@ -77,12 +77,10 @@ Module.register("MMM-WeConnect", {
         const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        console.log("Calculated distance: " + earthRadiusKm * c * 1000 + " meters");
         return earthRadiusKm * c * 1000;
     },
 
     calculateAge: function (time) {
-        console.log("Time = " + time + ", Date.now() = " + Date.now());
         const sec = Math.round((Date.now() - time) / 1000);
         if (sec < 45) return 'now'
         const min = Math.round(sec / 60)
@@ -110,26 +108,22 @@ Module.register("MMM-WeConnect", {
         let closestPosition = "";
         let closestDistance = 999999999;
         this.config.positions.forEach(configPos => {
-            console.log("Comparing to ", configPos);
             let distance = this.distanceInMetersBetweenEarthCoordinates(
                 carData.get("latitude").value,
                 carData.get("longitude").value,
                 configPos.lat,
                 configPos.lon
             );
-            console.log("Calculated distance: " + distance + " meters");
             if (distance < closestDistance) {
                 closestDistance = distance;
                 if(distance < configPos.marginMeters) {
                     closestPosition = configPos.name;
                 }
             }
-            console.log("configPos.name = ", configPos.name, "config.homePosition = ", this.config.homePosition);
             if (configPos.name == this.config.homePosition) {
                 distanceFromHome = "" + Math.round(distance / 100) / 10 + " km hjemmefra";
             }
         });
-        console.log("closestPosition = ", closestPosition, ", distanceFromHome = ", distanceFromHome);
         return closestPosition || distanceFromHome || "";
     },
 
@@ -207,7 +201,7 @@ Module.register("MMM-WeConnect", {
     },
 
     updateCar: function (drawing, carData, config) {
-        console.log('carData: ', carData);
+        // console.log('carData: ', carData);
 
         // Distance covered
         if (config.showDistance && carData.has("distanceCovered")) {
@@ -279,9 +273,7 @@ Module.register("MMM-WeConnect", {
         // Position
         if (config.showPosition) {
             if (carData.has("driving") && carData.get("driving").value == "NO" && carData.has("latitude")) {
-                console.log("Calling findPosition")
                 const p = this.findPosition(carData);
-                console.log("p: ", p);
                 drawing.position.text(p);
             } else {
                 drawing.position.text("Kjører...");

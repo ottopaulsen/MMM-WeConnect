@@ -66,18 +66,18 @@ module.exports = NodeHelper.create({
         }).catch(function () {
             console.log('No internet connection');
             carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
-            console.log('Sending data: ', carData);
+            // console.log('Sending data: ', carData);
             self.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             return;
         });
     },
 
     loginWeConnect: async function (config, successFunction, me, retries = 1) {
-        console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
+        // console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
-                console.log(self.name + ': Logged in to WeConnect');
+                // console.log(self.name + ': Logged in to WeConnect');
                 self.loaded = true;
                 successFunction(me);
             })
@@ -91,11 +91,11 @@ module.exports = NodeHelper.create({
     },
 
     readCarData: function (resource) {
-        console.log(this.name + ': Reading car data for ' + resource.path);
+        // console.log(this.name + ': Reading car data for ' + resource.path);
 
         weconnect.api(resource.path)
             .then(data => {
-                console.log('Got data: ', JSON.stringify(JSON.parse(data), null, 2));
+                // console.log('Got data: ', JSON.stringify(JSON.parse(data), null, 2));
 
                 if (resource.path == '/-/cf/get-location') {
                     driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
@@ -116,7 +116,7 @@ module.exports = NodeHelper.create({
                         suffix: value.suffix
                     });
                 })
-                console.log('Sending data: ', carData);
+                // console.log('Sending data: ', carData);
                 this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             })
             .catch(err => {
