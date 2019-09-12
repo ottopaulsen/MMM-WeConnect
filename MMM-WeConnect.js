@@ -34,7 +34,7 @@ Module.register("MMM-WeConnect", {
         if (notification === 'WECONNECT_CARDATA') {
             if (payload != null) {
                 self.carData = JSON.parse(payload).reduce((m, [key, val]) => m.set(key, val), new Map());
-                // console.log('Parsed carData: ', self.carData);
+                console.log('Parsed carData: ', self.carData);
                 self.updateCar(self.carDrawing, self.carData, self.config);
             } else {
                 console.log(self.name + ': WECONNECT_CARDATA - No payload');
@@ -104,7 +104,6 @@ Module.register("MMM-WeConnect", {
             return "";
         }
         let distanceFromHome = "";
-        let positionName = "";
         let closestPosition = "";
         let closestDistance = 999999999;
         this.config.positions.forEach(configPos => {
@@ -149,7 +148,7 @@ Module.register("MMM-WeConnect", {
         const chargerBox = svg.rect(15, 50).move(0, 55).radius(2).fill(baseColor);
         const wall = svg.line(0, 0, 0, 300).stroke({ width: 1, color: baseColor });
         const charging = svg.polygon("60,65 90,25 100,35 130,10 100,55 90,45")
-            .fill(baseColor).rotate(-30).hide();
+            .fill("yellow").rotate(-30).hide();
         const battery = svg.group();
         const batteryBody = battery.rect(130, 60).move(180, 162).radius(10).fill(batteryColor).hide();
         const batteryTop = battery.rect(12, 34).move(310, 175).radius(3).fill(batteryColor).hide();
@@ -163,7 +162,7 @@ Module.register("MMM-WeConnect", {
         const distance = svg.text("").move(245, 230).font({ size: 22, anchor: "middle", fill: textColor });
         const batteryPercent = svg.text("").move(245, 155).font({ size: 40, anchor: "middle", fill: "yellow" });
         const range = svg.text("").move(245, 110).font({ size: 32, anchor: "middle", fill: "black", weight: 600 });
-        const remainingChargingTime = svg.text("").move(10, -30).font({ size: 28, anchor: "start", fill: textColor });
+        const remainingChargingTime = svg.text("").move(10, -10).font({ size: 24, anchor: "start", fill: textColor });
         const position = svg.text("").move(245, 280).font({ size: 28, anchor: "middle", fill: textColor });
         const lastConnection = svg.text("We Connect").move(372, -10).font({ size: 20, anchor: "end", fill: textColor });
 
@@ -237,11 +236,11 @@ Module.register("MMM-WeConnect", {
                 drawing.remainingChargingTime.show();
                 drawing.remainingChargingTime.text(
                     ""
-                    + chargingRemainingHour.value
-                    + chargingRemainingHour.suffix
+                    + carData.get("chargingRemainingHour").value
+                    + carData.get("chargingRemainingHour").suffix
                     + " "
-                    + chargingRemainingMinute.value
-                    + chargingRemainingMinute.suffix
+                    + carData.get("chargingRemainingMinute").value
+                    + carData.get("chargingRemainingMinute").suffix
                 );
             } else {
                 drawing.charging.hide();
