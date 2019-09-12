@@ -232,7 +232,7 @@ Module.register("MMM-WeConnect", {
             
         // Charging
         if (carData.has("charging")) {
-            if (carData.get("charging").value == "ON") {
+            if (carData.get("charging").value == "CHARGING") {
                 drawing.charging.show();
                 drawing.remainingChargingTime.show();
                 drawing.remainingChargingTime.text(
