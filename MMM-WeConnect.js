@@ -4,7 +4,8 @@ Module.register("MMM-WeConnect", {
     getScripts: function () {
         return [
             this.file('node_modules/jsonpointer/jsonpointer.js'),
-            this.file('node_modules/svg.js/dist/svg.js')
+            this.file('node_modules/svg.js/dist/svg.js'),
+            'moment.js'
         ];
     },
 
@@ -26,6 +27,8 @@ Module.register("MMM-WeConnect", {
         this.carData = [];
         this.loaded = true;
         this.sendSocketNotification('WECONNECT_CONFIG', this.config);
+        moment().format();
+        moment.locale('no');
     },
 
     socketNotificationReceived: function (notification, payload) {
@@ -81,6 +84,7 @@ Module.register("MMM-WeConnect", {
     },
 
     calculateAge: function (time) {
+        console.log("Calculating age for time ", time);
         const sec = Math.round((Date.now() - time) / 1000);
         if (sec < 45) return 'now'
         const min = Math.round(sec / 60)
@@ -210,7 +214,7 @@ Module.register("MMM-WeConnect", {
         }
 
         // Connection state
-        if(carData.get("driving").value == "NO") {
+        if(carData.has("driving") && carData.get("driving").value == "NO") {
             if (carData.has("connectionState")) {
                 if (carData.get("connectionState").value == "CONNECTED") {
                     drawing.cableConnected.show();
@@ -304,7 +308,9 @@ Module.register("MMM-WeConnect", {
         if (carData.has("apiConnection") && carData.get("apiConnection").value == "OK") {
             if (carData.has("lastConectionTime")) {
                 time = carData.get("lastConectionDate").value + " " + carData.get("lastConectionTime").value;
-                date = Date.parse(time);
+                console.log("Time = ", time);
+                date = moment(time, "DD.MM.YYYY hh:mm");
+                console.log("Date = ", date);
                 drawing.lastConnection.text(this.calculateAge(date));
             }
         } else {

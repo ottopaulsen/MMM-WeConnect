@@ -6,6 +6,7 @@
   "dependencies": {
     "internet-available": "^1.0.0",
     "jsonpointer": "^4.0.1",
+    "moment": "^2.24.0",
     "request-promise": "^4.2.4",
     "svg.js": "^2.7.1"
   }
