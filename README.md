@@ -1,12 +1,19 @@
 # MMM We Connect
 
+Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen.
+
 This is currently under test, not ready for production.
 
 ## Screenshot
 
-![Screenshot](doc/MMM-WeConnect.png)
+The car is connected and charging:
 
-Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using VW We Connect.
+![Screenshot](doc/MMM-WeConnect-Screenshot-Charging.png)
+
+The car is driving:
+
+![Screenshot](doc/MMM-WeConnect-Screenshot-Driving.png)
+
 
 ## Installasjon
 
@@ -59,6 +66,11 @@ Here is an example configuration with description. Put it in the `MagicMirror/co
     },
 ```
 
+Add entries for the positions you want to show with specific text (name). 
+
+The homePosition should be set to the name of the position that represents home. This makes it possible to show how far away fro home the car is, when it is not at any known position.
+
+If you want other languages, add your own translation file in the translations folder.
 
 ## Collaborate
 

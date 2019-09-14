@@ -9,6 +9,13 @@ Module.register("MMM-WeConnect", {
         ];
     },
 
+    getTranslations: function() {
+        return {
+                en: "translations/en.json",
+                nb: "translations/nb.json"
+        }
+    },
+
     // Default module config
     defaults: {
         refreshIntervalSeconds: 300,
@@ -28,7 +35,7 @@ Module.register("MMM-WeConnect", {
         this.loaded = true;
         this.sendSocketNotification('WECONNECT_CONFIG', this.config);
         moment().format();
-        moment.locale('no');
+        moment.locale(config.language);
     },
 
     socketNotificationReceived: function (notification, payload) {
@@ -84,21 +91,20 @@ Module.register("MMM-WeConnect", {
     },
 
     calculateAge: function (time) {
-        console.log("Calculating age for time ", time);
         const sec = Math.round((Date.now() - time) / 1000);
-        if (sec < 45) return 'now'
+        if (sec < 45) return this.translate("NOW");
         const min = Math.round(sec / 60)
-        if (min < 60) return min + ' min'
+        if (min < 60) return min + ' ' + this.translate("MINUTES");
         const h = Math.round(min / 60)
-        if (h < 24) return h + ' hours'
+        if (h < 24) return h + ' ' + this.translate("HOURS");
         const d = Math.round(h / 24)
-        return d + ' days'
+        return d + ' ' + this.translate("DAYS");
     },
 
     findPosition: function (carData) {
         if (!carData.has("driving")) {
             if (carData.get("driving").value == "YES") {
-                return "Driving"
+                return this.translate("DRIVING");
             }
         }
         if (!carData.has("latitude")) {
@@ -124,7 +130,7 @@ Module.register("MMM-WeConnect", {
                 }
             }
             if (configPos.name == this.config.homePosition) {
-                distanceFromHome = "" + Math.round(distance / 100) / 10 + " km hjemmefra";
+                distanceFromHome = "" + Math.round(distance / 100) / 10 + " km " + this.translate("FROM HOME");
             }
         });
         return closestPosition || distanceFromHome || "";
@@ -279,7 +285,7 @@ Module.register("MMM-WeConnect", {
                 const p = this.findPosition(carData);
                 drawing.position.text(p);
             } else {
-                drawing.position.text("Kjører...");
+                drawing.position.text( this.translate("DRIVING"));
             }
         }
 
@@ -308,9 +314,7 @@ Module.register("MMM-WeConnect", {
         if (carData.has("apiConnection") && carData.get("apiConnection").value == "OK") {
             if (carData.has("lastConectionTime")) {
                 time = carData.get("lastConectionDate").value + " " + carData.get("lastConectionTime").value;
-                console.log("Time = ", time);
                 date = moment(time, "DD.MM.YYYY hh:mm");
-                console.log("Date = ", date);
                 drawing.lastConnection.text(this.calculateAge(date));
             }
         } else {
