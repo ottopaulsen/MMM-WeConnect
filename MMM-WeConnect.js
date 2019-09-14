@@ -9,10 +9,10 @@ Module.register("MMM-WeConnect", {
         ];
     },
 
-    getTranslations: function() {
+    getTranslations: function () {
         return {
-                en: "translations/en.json",
-                nb: "translations/nb.json"
+            en: "translations/en.json",
+            nb: "translations/nb.json"
         }
     },
 
@@ -27,7 +27,28 @@ Module.register("MMM-WeConnect", {
         showConnectionStatus: true,
         showDriving: true,
         showBattery: true,
-    },
+        colors: {
+            car: "gray",
+            text: "#ccc",
+            rangeText: "black",
+            chargingSign: "yellow",
+            lightsOn: "yellow",
+            lightsOff: "#222",
+            wheels: "#222"
+        },
+        batteryColors: [
+            { upTo: 20, background: "pink", forground: "red", text: "yellow" },
+            { upTo: 50, background: "pink", forground: "orange", text: "yellow" },
+            { upTo: 75, background: "#666", forground: "blue", text: "yellow" },
+            { upTo: 100, background: "#666", forground: "green", text: "yellow" }
+        ],
+        positions: [
+            {name: "Hjemme", lat: 63.430484,  lon: 10.394966, marginMeters: 50},
+            {name: "Trondheim Spektrum", lat: 63.426559, lon: 10.376309, marginMeters: 100},
+            {name: "City Lade", lat: 63.444426, lon: 10.446577, marginMeters: 200}
+        ],
+        homePosition: "Hjemme"
+},
 
     start: function () {
         console.log(this.name + ' started.');
@@ -66,7 +87,7 @@ Module.register("MMM-WeConnect", {
         wrapper.appendChild(svgDiv);
 
         setTimeout(() => {
-            this.carDrawing = this.drawCar();
+            this.carDrawing = this.drawCar(this.config);
         }, 100)
         return wrapper;
     },
@@ -125,7 +146,7 @@ Module.register("MMM-WeConnect", {
             );
             if (distance < closestDistance) {
                 closestDistance = distance;
-                if(distance < configPos.marginMeters) {
+                if (distance < configPos.marginMeters) {
                     closestPosition = configPos.name;
                 }
             }
@@ -136,21 +157,21 @@ Module.register("MMM-WeConnect", {
         return closestPosition || distanceFromHome || "";
     },
 
-    drawCar: function () {
-        const baseColor = "gray";
-        const textColor = "#ccc";
-        const batteryColor = "#666";
-        const svg = SVG('carDrawing').size(this.config.size, this.config.size).viewbox(0, 0, 400, 400);
+    drawCar: function (config) {
+        const baseColor = config.colors.car;
+        const textColor = config.colors.text;
+        const batteryColor = config.colors.emptyBattery;
+        const svg = SVG('carDrawing').size(config.size, config.size).viewbox(0, 0, 400, 400);
         const car = svg.group();
-        const leftWheel = car.rect(40, 60).move(130, 200).radius(10).fill("black").stroke({ width: 3, color: baseColor });
-        const rightWheel = car.rect(40, 60).move(320, 200).radius(10).fill("black").stroke({ width: 3, color: baseColor });
+        const leftWheel = car.rect(40, 60).move(130, 200).radius(10).fill(config.colors.wheels).stroke({ width: 3, color: baseColor });
+        const rightWheel = car.rect(40, 60).move(320, 200).radius(10).fill(config.colors.wheels).stroke({ width: 3, color: baseColor });
         const body = car.path("M100 150 v80 h290 v-80 a30 30 0 0 0 -30 -30 h-230 a30 30 0 0 0 -30 30")
             .stroke({ width: 10, color: baseColor })
             .fill(baseColor);
         const top = car.path("M140 120 v-40 a30 30 0 0 1 30 -30 h150 a30 30 0 0 1 30 30 v40")
             .stroke({ width: 10, color: baseColor });
-        const leftLight = svg.circle(40).move(120, 140).fill("black");
-        const rightLight = svg.circle(40).move(330, 140).fill("black");
+        const leftLight = svg.circle(40).move(120, 140).fill(config.colors.lightsOff);
+        const rightLight = svg.circle(40).move(330, 140).fill(config.colors.lightsOff);
         const cableConnected = svg.path("M100 160 h-20 a15 15 0 0 1 -15 -15 v-60 a15 15 0 0 0 -15 -15 h-50")
             .stroke({ width: 8, color: baseColor }).hide();
         const cableDisConnected = svg.path("M0 70 h20 a15 15 0 0 1 15 15 v180 m-5 15 v-10 a5 5 0 0 1 10 0 v10")
@@ -170,14 +191,14 @@ Module.register("MMM-WeConnect", {
         const antennaTop = svg.circle(5).center(380, 10).fill(baseColor);
 
         const distance = svg.text("").move(245, 230).font({ size: 22, anchor: "middle", fill: textColor });
-        const batteryPercent = svg.text("").move(245, 155).font({ size: 40, anchor: "middle", fill: "yellow" });
-        const range = svg.text("").move(245, 110).font({ size: 32, anchor: "middle", fill: "black", weight: 600 });
+        const batteryPercent = svg.text("").move(245, 155).font({ size: 40, anchor: "middle", fill: config.colors.batteryPercent });
+        const range = svg.text("").move(245, 110).font({ size: 32, anchor: "middle", fill: config.colors.rangeText, weight: 600 });
         const remainingChargingTime = svg.text("").move(10, -10).font({ size: 24, anchor: "start", fill: textColor });
         const position = svg.text("").move(245, 280).font({ size: 28, anchor: "middle", fill: textColor });
         const lastConnection = svg.text("We Connect").move(372, -10).font({ size: 20, anchor: "end", fill: textColor });
 
-        if (!this.config.showConnectionStatus) lastConnection.hide();
-        if (!this.config.showBattery) battery.hide();
+        if (!config.showConnectionStatus) lastConnection.hide();
+        if (!config.showBattery) battery.hide();
 
         return {
             svg,
@@ -210,8 +231,6 @@ Module.register("MMM-WeConnect", {
     },
 
     updateCar: function (drawing, carData, config) {
-        // console.log('carData: ', carData);
-
         // Distance covered
         if (config.showDistance && carData.has("distanceCovered")) {
             drawing.distance.text(carData.get("distanceCovered").value + " " + carData.get("distanceCovered").suffix).show();
@@ -220,7 +239,7 @@ Module.register("MMM-WeConnect", {
         }
 
         // Connection state
-        if(carData.has("driving") && carData.get("driving").value == "NO") {
+        if (carData.has("driving") && carData.get("driving").value == "NO") {
             if (carData.has("connectionState")) {
                 if (carData.get("connectionState").value == "CONNECTED") {
                     drawing.cableConnected.show();
@@ -238,7 +257,7 @@ Module.register("MMM-WeConnect", {
             drawing.wall.hide();
             drawing.chargerBox.hide();
         }
-            
+
         // Charging
         if (carData.has("charging")) {
             if (carData.get("charging").value == "CHARGING") {
@@ -264,15 +283,20 @@ Module.register("MMM-WeConnect", {
             drawing.batteryBody.show();
             drawing.batteryTop.show();
             drawing.batteryLevel.width(drawing.batteryBody.width() * level / 100).show();
-            let color = "green";
-            if (level < 20) color = "red";
-            else if (level < 50) color = "orange";
-            else if (level < 75) color = "blue";
-            else color = "green";
-            drawing.batteryLevel.fill(color);
+
+            let colors;
+            for (i = 0; i < config.batteryColors.length; i++) {
+                colors = config.batteryColors[i];
+                if (level < config.batteryColors[i].upTo) {
+                    break;
+                }
+            }
+
+            drawing.batteryLevel.fill(colors.forground);
+            drawing.battery.fill(colors.background);
 
             if (config.showBatteryPercent) {
-                drawing.batteryPercent.text("" + level + " " + carData.get("battery").suffix);
+                drawing.batteryPercent.text("" + level + " " + carData.get("battery").suffix).fill(colors.text);
             }
             if (config.showRange) {
                 drawing.range.text("" + carData.get("range").value + " " + carData.get("range").suffix);
@@ -285,15 +309,15 @@ Module.register("MMM-WeConnect", {
                 const p = this.findPosition(carData);
                 drawing.position.text(p);
             } else {
-                drawing.position.text( this.translate("DRIVING"));
+                drawing.position.text(this.translate("DRIVING"));
             }
         }
 
         // Driving
         if (config.showDriving && carData.has("driving")) {
             if (carData.get("driving").value == "YES") {
-                drawing.leftLight.fill("yellow");
-                drawing.rightLight.fill("yellow");
+                drawing.leftLight.fill(config.colors.lightsOn);
+                drawing.rightLight.fill(config.colors.lightsOn);
                 drawing.driver.show();
                 drawing.driverHead.show();
                 drawing.wall.hide();
@@ -301,8 +325,8 @@ Module.register("MMM-WeConnect", {
                 drawing.cableConnected.hide();
                 drawing.cableDisConnected.hide();
             } else {
-                drawing.leftLight.fill("black");
-                drawing.rightLight.fill("black");
+                drawing.leftLight.fill(config.colors.lightsOff);
+                drawing.rightLight.fill(config.colors.lightsOff);
                 drawing.driver.hide();
                 drawing.driverHead.hide();
                 drawing.wall.show();
