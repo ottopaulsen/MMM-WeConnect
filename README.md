@@ -2,6 +2,7 @@
 
 Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen.
 
+
 This is currently under test, not ready for production.
 
 ## Screenshot
@@ -76,15 +77,43 @@ The homePosition should be set to the name of the position that represents home.
 
 If you want other languages, add your own translation file in the translations folder.
 
-**Important notice**
+### Password security
 
 You must keep your We Connect username and password secret!
 If anyone gets hold of them, they can potentially steal your car, or do other harm!
 
+### CSS Styling
+
+If you want to use CSS to style the drawing, the element id's below are available, but I have not really tried, and I do not know if it is very convenient.
+
+```
+car
+left_wheel
+right_wheel
+car_body
+left_light
+right_light
+cable_connected
+cable_disconnected
+charger_box
+wall
+charging
+battery
+battery_body
+battery_top
+battery_level
+driver
+driver_head
+antenna
+antenna_top
+distance
+battery_percent
+range
+remaining_charging_time
+position
+last_connection
+```
 
 ## Collaborate
 
 Pull requests are welcome.
-
-## TO DO
-

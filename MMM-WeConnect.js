@@ -43,12 +43,12 @@ Module.register("MMM-WeConnect", {
             { upTo: 100, background: "#666", forground: "green", text: "yellow" }
         ],
         positions: [
-            {name: "Hjemme", lat: 63.430484,  lon: 10.394966, marginMeters: 50},
-            {name: "Trondheim Spektrum", lat: 63.426559, lon: 10.376309, marginMeters: 100},
-            {name: "City Lade", lat: 63.444426, lon: 10.446577, marginMeters: 200}
+            { name: "Hjemme", lat: 63.430484, lon: 10.394966, marginMeters: 50 },
+            { name: "Trondheim Spektrum", lat: 63.426559, lon: 10.376309, marginMeters: 100 },
+            { name: "City Lade", lat: 63.444426, lon: 10.446577, marginMeters: 200 }
         ],
         homePosition: "Hjemme"
-},
+    },
 
     start: function () {
         console.log(this.name + ' started.');
@@ -161,41 +161,115 @@ Module.register("MMM-WeConnect", {
         const baseColor = config.colors.car;
         const textColor = config.colors.text;
         const batteryColor = config.colors.emptyBattery;
-        const svg = SVG('carDrawing').size(config.size, config.size).viewbox(0, 0, 400, 400);
-        const car = svg.group();
-        const leftWheel = car.rect(40, 60).move(130, 200).radius(10).fill(config.colors.wheels).stroke({ width: 3, color: baseColor });
-        const rightWheel = car.rect(40, 60).move(320, 200).radius(10).fill(config.colors.wheels).stroke({ width: 3, color: baseColor });
+        const svg = SVG('carDrawing').size(config.size, config.size)
+            .viewbox(0, 0, 400, 400);
+        const car = svg.group()
+            .attr('id', 'car');
+        const leftWheel = car.rect(40, 60)
+            .move(130, 200)
+            .radius(10)
+            .fill(config.colors.wheels)
+            .stroke({ width: 3, color: baseColor })
+            .attr('id', 'left_wheel');
+        const rightWheel = car.rect(40, 60)
+            .move(320, 200)
+            .radius(10)
+            .fill(config.colors.wheels)
+            .stroke({ width: 3, color: baseColor })
+            .attr('id', 'right_wheel');
         const body = car.path("M100 150 v80 h290 v-80 a30 30 0 0 0 -30 -30 h-230 a30 30 0 0 0 -30 30")
             .stroke({ width: 10, color: baseColor })
-            .fill(baseColor);
+            .fill(baseColor)
+            .attr('id', 'car_body');
         const top = car.path("M140 120 v-40 a30 30 0 0 1 30 -30 h150 a30 30 0 0 1 30 30 v40")
             .stroke({ width: 10, color: baseColor });
-        const leftLight = svg.circle(40).move(120, 140).fill(config.colors.lightsOff);
-        const rightLight = svg.circle(40).move(330, 140).fill(config.colors.lightsOff);
+        const leftLight = svg.circle(40)
+            .move(120, 140)
+            .fill(config.colors.lightsOff)
+            .attr('id', 'left_light');
+        const rightLight = svg.circle(40)
+            .move(330, 140)
+            .fill(config.colors.lightsOff)
+            .attr('id', 'right_light');
         const cableConnected = svg.path("M100 160 h-20 a15 15 0 0 1 -15 -15 v-60 a15 15 0 0 0 -15 -15 h-50")
-            .stroke({ width: 8, color: baseColor }).hide();
+            .stroke({ width: 8, color: baseColor })
+            .hide()
+            .attr('id', 'cable_connected');
         const cableDisConnected = svg.path("M0 70 h20 a15 15 0 0 1 15 15 v180 m-5 15 v-10 a5 5 0 0 1 10 0 v10")
-            .stroke({ width: 8, color: baseColor }).hide();
-        const chargerBox = svg.rect(15, 50).move(0, 55).radius(2).fill(baseColor);
-        const wall = svg.line(0, 0, 0, 300).stroke({ width: 1, color: baseColor });
+            .stroke({ width: 8, color: baseColor })
+            .hide()
+            .attr('id', 'cable_disconnected');
+        const chargerBox = svg.rect(15, 50)
+            .move(0, 55)
+            .radius(2)
+            .fill(baseColor)
+            .attr('id', 'charger_box');
+        const wall = svg.line(0, 0, 0, 300)
+            .stroke({ width: 1, color: baseColor })
+            .attr('id', 'wall');
         const charging = svg.polygon("60,65 90,25 100,35 130,10 100,55 90,45")
-            .fill("yellow").rotate(-30).hide();
-        const battery = svg.group();
-        const batteryBody = battery.rect(130, 60).move(180, 162).radius(10).fill(batteryColor).hide();
-        const batteryTop = battery.rect(12, 34).move(310, 175).radius(3).fill(batteryColor).hide();
-        const batteryLevel = batteryBody.clone();
+            .fill("yellow")
+            .rotate(-30)
+            .hide()
+            .attr('id', 'charging');
+        const battery = svg.group()
+            .attr('id', 'battery');
+        const batteryBody = battery.rect(130, 60)
+            .move(180, 162)
+            .radius(10)
+            .fill(batteryColor)
+            .hide()
+            .attr('id', 'battery_body');
+        const batteryTop = battery.rect(12, 34)
+            .move(310, 175)
+            .radius(3)
+            .fill(batteryColor)
+            .hide()
+            .attr('id', 'battery_top');
+        const batteryLevel = batteryBody.clone()
+            .attr('id', 'battery_level');
         const driver = svg.path("M195 120 a100 100 0 0 1 100 0")
-            .stroke({ width: 10, color: baseColor }).fill(baseColor).hide();
-        const driverHead = svg.circle(44).center(245, 86).fill(baseColor).hide();
-        const antenna = svg.line(370, 120, 380, 10).stroke({ width: 3, color: baseColor });
-        const antennaTop = svg.circle(5).center(380, 10).fill(baseColor);
+            .stroke({ width: 10, color: baseColor })
+            .fill(baseColor)
+            .hide()
+            .attr('id', 'driver');
+        const driverHead = svg.circle(44)
+            .center(245, 86)
+            .fill(baseColor)
+            .hide()
+            .attr('id', 'driver_head');
+        const antenna = svg.line(370, 120, 380, 10)
+            .stroke({ width: 3, color: baseColor })
+            .attr('id', 'antenna');
+        const antennaTop = svg.circle(5)
+            .center(380, 10)
+            .fill(baseColor)
+            .attr('id', 'antenna_top');
 
-        const distance = svg.text("").move(245, 230).font({ size: 22, anchor: "middle", fill: textColor });
-        const batteryPercent = svg.text("").move(245, 155).font({ size: 40, anchor: "middle", fill: config.colors.batteryPercent });
-        const range = svg.text("").move(245, 110).font({ size: 32, anchor: "middle", fill: config.colors.rangeText, weight: 600 });
-        const remainingChargingTime = svg.text("").move(10, -10).font({ size: 24, anchor: "start", fill: textColor });
-        const position = svg.text("").move(245, 280).font({ size: 28, anchor: "middle", fill: textColor });
-        const lastConnection = svg.text("We Connect").move(372, -10).font({ size: 20, anchor: "end", fill: textColor });
+        const distance = svg.text("")
+            .move(245, 230)
+            .font({ size: 22, anchor: "middle", fill: textColor })
+            .attr('id', 'distance');
+        const batteryPercent = svg.text("")
+            .move(245, 155)
+            .font({ size: 40, anchor: "middle", fill: config.colors.batteryPercent })
+            .attr('id', 'battery_percent');
+        const range = svg.text("")
+            .move(245, 110)
+            .font({ size: 32, anchor: "middle", fill: config.colors.rangeText, weight: 600 })
+            .attr('id', 'range');
+        const remainingChargingTime = svg.text("")
+            .move(10, -10)
+            .font({ size: 24, anchor: "start", fill: textColor })
+            .attr('id', 'remaining_charging_time');
+        const position = svg.text("")
+            .move(245, 280)
+            .font({ size: 28, anchor: "middle", fill: textColor })
+            .attr('id', 'position');
+        const lastConnection = svg.text("We Connect")
+            .move(372, -10)
+            .font({ size: 20, anchor: "end", fill: textColor })
+            .attr('id', 'last_connection');
 
         if (!config.showConnectionStatus) lastConnection.hide();
         if (!config.showBattery) battery.hide();
