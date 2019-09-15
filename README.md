@@ -24,9 +24,9 @@ The car is driving:
 ![Screenshot](doc/MMM-WeConnect-Screenshot-Driving.png)
 
 
-## Installasjon
+## Installation
 
-Go to your `MagicMirror/modules` and write
+Go to your `MagicMirror/modules` folder and write
 
     git clone https://github.com/ottopaulsen/MMM-WeConnect
     cd MMM-WeConnect
@@ -44,7 +44,7 @@ Here is an example configuration. Put it in the `MagicMirror/config/config.js` f
         config: {
             email: '<we-connect.username>',
             password: '<we-connect-password>',
-            refreshIntervalSeconds: 300,
+            refreshIntervalSeconds: 180,
             size: 300, // This is the size of the drawing
             showDistance: true,
             showPosition: true,
@@ -86,7 +86,11 @@ The homePosition should be set to the name of the position that represents home.
 
 If you want other languages, add your own translation file in the translations folder.
 
-The logging can be set to true to output data to the console. It can be useful for example to get positions, but you can easily also use Google Maps for this.
+The logging can be set to `true` to output data to the console. It can be useful for example to get positions, but you can easily also use Google Maps for this.
+
+### Privacy
+
+Please respect peoples privacy rights, and do not show position unless all drivers and passangers agree to this. This is your responsibility.
 
 ### Password security
 
@@ -136,8 +140,8 @@ Here are some improvements I have been thinking of, but not started:
 * Choose to show information in table or other form, instead of the drawing.
 * Improve the drawing.
 * Better support for other models, for example hybrid cars. I am not going to do that myself.
-* Show of long time or distance until next service.
-* Warn when it is getting close to servie time.
+* Show how long time or distance until next service.
+* Warn when it is getting close to service time.
 
 If you find bugs, please investigate them by turning on logging in the config, and create an issue containing the logged information, especially the information retrieved by node_helper from the We Connect API. NB! Keep your passward safe!
 
