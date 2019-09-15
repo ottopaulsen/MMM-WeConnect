@@ -27,6 +27,7 @@ Module.register("MMM-WeConnect", {
         showConnectionStatus: true,
         showDriving: true,
         showBattery: true,
+        logging: false,
         colors: {
             car: "gray",
             text: "#ccc",
@@ -59,13 +60,18 @@ Module.register("MMM-WeConnect", {
         moment.locale(config.language);
     },
 
+    log: function(...args) {
+        if (this.config.logging) {
+            console.log(args);
+        }
+    },
+
     socketNotificationReceived: function (notification, payload) {
         var self = this;
-        // console.log(self.name + ': Received socket notification ' + notification + ' with data ' + payload);
         if (notification === 'WECONNECT_CARDATA') {
             if (payload != null) {
                 self.carData = JSON.parse(payload).reduce((m, [key, val]) => m.set(key, val), new Map());
-                console.log('Parsed carData: ', self.carData);
+                this.log('Parsed carData: ', self.carData);
                 self.updateCar(self.carDrawing, self.carData, self.config);
             } else {
                 console.log(self.name + ': WECONNECT_CARDATA - No payload');

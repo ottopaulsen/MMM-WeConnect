@@ -47,6 +47,12 @@ module.exports = NodeHelper.create({
         this.loaded = false;
     },
 
+    log: function(...args) {
+        if (this.config.logging) {
+            console.log(args);
+        }
+    },
+
     startReadingData: function () {
         this.readData();
         setInterval(() => {
@@ -66,18 +72,18 @@ module.exports = NodeHelper.create({
         }).catch(function () {
             console.log('No internet connection');
             carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
-            console.log('Sending data: ', carData);
+            this.log('Sending data: ', carData);
             self.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             return;
         });
     },
 
     loginWeConnect: async function (config, successFunction, me, retries = 1) {
-        // console.log(this.name + ': Logging in to WeConnect (' + retries + ')');
+        this.log(this.name + ': Logging in to WeConnect (' + retries + ')');
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
-                // console.log(self.name + ': Logged in to WeConnect');
+                this.log(self.name + ': Logged in to WeConnect');
                 self.loaded = true;
                 successFunction(me);
             })
@@ -91,11 +97,14 @@ module.exports = NodeHelper.create({
     },
 
     readCarData: function (resource) {
-        // console.log(this.name + ': Reading car data for ' + resource.path);
+        this.log(this.name + ': Reading car data for ' + resource.path);
 
         weconnect.api(resource.path)
             .then(data => {
-                // console.log('Got data: ', JSON.stringify(JSON.parse(data), null, 2));
+                if (this.config.logging) {
+                    // The log args fucks up the formatting, so must use console.log here
+                    console.log('Got data for ' + resource.path + ': ', JSON.stringify(JSON.parse(data), null, 2));
+                }
 
                 if (resource.path == '/-/cf/get-location') {
                     driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
@@ -116,7 +125,7 @@ module.exports = NodeHelper.create({
                         suffix: value.suffix
                     });
                 })
-                // console.log('Sending data: ', carData);
+                // this.log('Sending data: ', carData);
                 this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             })
             .catch(err => {
@@ -126,12 +135,11 @@ module.exports = NodeHelper.create({
 
 
     socketNotificationReceived: function (notification, payload) {
-        console.log(this.name + ': Socket notification received: ', notification, ': ', payload);
+        // this.log(this.name + ': Socket notification received: ', notification, ': ', payload);
         if (notification === 'WECONNECT_CONFIG') {
             var config = payload;
             this.config = config;
             this.startReadingData();
-            // this.loginWeConnect(config);
         }
     },
 });

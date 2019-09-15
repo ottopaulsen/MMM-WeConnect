@@ -1,9 +1,17 @@
 # MMM We Connect
 
-Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen.
+Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen, formerly known as Car-Net. 
 
+The module shows a car sketch with information whether the car is connected to charging cable or not, charging or not, or if it is driving or parked. Based on configuration, it may also show where the car is parked, or how far away from home it is parked. It also shows how much energy is on the battery, end estimated range, as well as the total distance counter of the car.
 
-This is currently under test, not ready for production.
+The solution is using the We Connect login page in order to get a key, and is after that using an API for retrieving data, the same API as the We Connect app is using. Unfortunately the login procedure has do be done every time data is fetched in order to get refreshed data, so refresh should not be done too often.
+
+Of course, you must have a We Connect subscription with username and password, and you should log in to the [We Connect portal](https://www.portal.volkswagen-we.com/portal) before using this module.
+
+I have only tested this with my eGolf, and it may behave differently with other models. I assume it also may behave a little different in other countries than Norway, where I have tested it. 
+
+Feel free to help adapting it to other models.
+
 
 ## Screenshot
 
@@ -18,7 +26,7 @@ The car is driving:
 
 ## Installasjon
 
-Go to `MagicMirror/modules` and write
+Go to your `MagicMirror/modules` and write
 
     git clone https://github.com/ottopaulsen/MMM-WeConnect
     cd MMM-WeConnect
@@ -28,7 +36,7 @@ Go to `MagicMirror/modules` and write
 
 ## Configuration
 
-Here is an example configuration with description. Put it in the `MagicMirror/config/config.js` file:
+Here is an example configuration. Put it in the `MagicMirror/config/config.js` file:
 ``` javascript
     {
         module: 'MMM-WeConnect',
@@ -37,7 +45,7 @@ Here is an example configuration with description. Put it in the `MagicMirror/co
             email: '<we-connect.username>',
             password: '<we-connect-password>',
             refreshIntervalSeconds: 300,
-            size: 300,
+            size: 300, // This is the size of the drawing
             showDistance: true,
             showPosition: true,
             showBatteryPercent: true,
@@ -45,6 +53,7 @@ Here is an example configuration with description. Put it in the `MagicMirror/co
             showConnectionStatus: true,
             showDriving: true,
             showBattery: true,
+            logging: false, // Write some data to console.log()
             colors: {
                 car: "gray",
                 text: "#ccc",
@@ -73,14 +82,18 @@ Here is an example configuration with description. Put it in the `MagicMirror/co
 
 Add entries for the positions you want to show with specific text (name). 
 
-The homePosition should be set to the name of the position that represents home. This makes it possible to show how far away fro home the car is, when it is not at any known position.
+The homePosition should be set to the name of the position that represents home. This makes it possible to show how far away from home the car is, when it is not at any known position.
 
 If you want other languages, add your own translation file in the translations folder.
+
+The logging can be set to true to output data to the console. It can be useful for example to get positions, but you can easily also use Google Maps for this.
 
 ### Password security
 
 You must keep your We Connect username and password secret!
 If anyone gets hold of them, they can potentially steal your car, or do other harm!
+
+They are only used on the login procedure, but they persist in the configuration and may turn up in logs!
 
 ### CSS Styling
 
@@ -116,4 +129,15 @@ last_connection
 
 ## Collaborate
 
-Pull requests are welcome.
+If you want to help improving the module, that would be nice. Pull requests are welcome, but it may be better to create issues first, so we can discuss what kind of changes to make, and how to design the solution.
+
+Here are some improvements I have been thinking of, but not started:
+
+* Choose to show information in table or other form, instead of the drawing.
+* Improve the drawing.
+* Better support for other models, for example hybrid cars. I am not going to do that myself.
+* Show of long time or distance until next service.
+* Warn when it is getting close to servie time.
+
+If you find bugs, please investigate them by turning on logging in the config, and create an issue containing the logged information, especially the information retrieved by node_helper from the We Connect API. NB! Keep your passward safe!
+
