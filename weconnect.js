@@ -38,7 +38,7 @@ const get_login_url = base_url + '/portal/en_GB/web/guest/home/-/csrftokenhandli
 const complete_login_url = base_url + "/portal/web/guest/complete-login";
 
 const csrf_re = new RegExp('<meta name="_csrf" content="([^"]*)"/>');
-const login_action_url_re = new RegExp('<formclass="content"id="emailPasswordForm"name="emailPasswordForm"method="POST"novalidateaction="([^"]*)">');
+const login_action_url_re = new RegExp('<formclass="content"id="emailPasswordForm"name="emailPasswordForm"method="POST"novalidate*.*action="([^"]*)">');
 const login_action_url2_re = new RegExp('<formclass="content"id="credentialsForm"name="credentialsForm"method="POST"action="([^"]*)">');
 const login_relay_state_token_re = new RegExp('<inputtype="hidden"id="input_relayState"name="relayState"value="([^"]*)"/>');
 const login_csrf_re = new RegExp('<inputtype="hidden"id="csrf"name="_csrf"value="([^"]*)"/>');
