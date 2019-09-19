@@ -12,6 +12,8 @@ I have only tested this with my eGolf, and it may behave differently with other 
 
 Feel free to help adapting it to other models.
 
+Here are my other [modules for MagicMirror](https://github.com/ottopaulsen/magic).
+
 
 ## Screenshot
 
