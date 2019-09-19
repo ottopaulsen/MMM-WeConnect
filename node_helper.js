@@ -72,7 +72,7 @@ module.exports = NodeHelper.create({
         }).catch(function () {
             console.log('No internet connection');
             carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
-            this.log('Sending data: ', carData);
+            self.log('Sending data: ', carData);
             self.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             return;
         });
@@ -83,7 +83,7 @@ module.exports = NodeHelper.create({
         let self = this;
         weconnect.login(config.email, config.password)
             .then(res => {
-                this.log(self.name + ': Logged in to WeConnect');
+                self.log(self.name + ': Logged in to WeConnect');
                 self.loaded = true;
                 successFunction(me);
             })
