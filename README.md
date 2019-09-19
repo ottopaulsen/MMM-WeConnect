@@ -131,17 +131,20 @@ position
 last_connection
 ```
 
-## Collaborate
+## Contributions
 
-If you want to help improving the module, that would be nice. Pull requests are welcome, but it may be better to create issues first, so we can discuss what kind of changes to make, and how to design the solution.
+Grate thanks to [reneboer](https://github.com/reneboer), [Mirarkitty](https://github.com/Mirarkitty), [jaybora](https://github.com/jaybora), [Sneak-L8](https://github.com/Sneak-L8), [youpixel](https://github.com/youpixel), [birgersp](https://github.com/birgersp) and many others contributing to get the login procedure working, and for other information about the API. I specially leaned on [reneboer/python-carnet-client](https://github.com/reneboer/python-carnet-client) to get my Javascript version working.
+
+If you want to help improving this module, that would be nice. Pull requests are welcome, but it may be better to create issues first, so we can discuss what kind of changes to make, and how to design the solution.
 
 Here are some improvements I have been thinking of, but not started:
 
 * Choose to show information in table or other form, instead of the drawing.
-* Improve the drawing.
+* Improve the drawing. Not my profession...
 * Better support for other models, for example hybrid cars. I am not going to do that myself.
 * Show how long time or distance until next service.
 * Warn when it is getting close to service time.
 
 If you find bugs, please investigate them by turning on logging in the config, and create an issue containing the logged information, especially the information retrieved by node_helper from the We Connect API. NB! Keep your passward safe!
+
 
