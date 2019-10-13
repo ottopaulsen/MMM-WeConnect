@@ -65,7 +65,7 @@ module.exports = NodeHelper.create({
         internetAvailable().then(function () {
             carData.set("magicMirrorOnline", true);
             self.loginWeConnect(self.config, (me) => {
-                me.resources.forEach(resource => {
+                me.resources.forEach(resource => { // får resources undefined her
                     me.readCarData(resource);
                 });
             }, self);
@@ -103,6 +103,7 @@ module.exports = NodeHelper.create({
             .then(data => {
                 if (this.config.logging) {
                     // The log args fucks up the formatting, so must use console.log here
+                    console.log('data: ', data);
                     console.log('Got data for ' + resource.path + ': ', JSON.stringify(JSON.parse(data), null, 2));
                 }
 
