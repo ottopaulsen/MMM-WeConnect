@@ -1,13 +1,20 @@
 {
   "name": "MMM-VW-Connect",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Show data from your car via VW Connect",
   "author": "Otto Paulsen",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/ottopaulsen/MMM-WeConnect.git"
+  },
+  "license": "MIT",
   "dependencies": {
     "internet-available": "^1.0.0",
     "jsonpointer": "^4.0.1",
     "moment": "^2.24.0",
+    "request": "^2.88.0",
     "request-promise": "^4.2.4",
+    "request-promise-core": "^1.1.2",
     "svg.js": "^2.7.1"
   }
 }

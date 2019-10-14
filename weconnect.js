@@ -125,7 +125,11 @@ function catchRedirect(uri, headers, body, method) {
                 reject('Failed to log in to We Connect');
             })
             .catch(err => {
-                resolve(err.response.headers.location);
+                if(err.response.headers) {
+                    resolve(err.response.headers.location);
+                } else {
+                    reject('weconnect: Error catching redirect: ', err);
+                }
             })
     });
 }
