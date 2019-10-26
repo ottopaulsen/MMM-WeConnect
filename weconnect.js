@@ -59,6 +59,10 @@ const authcode_re = new RegExp('&code=([^"]*)');
 
 let apiUrl = '';
 
+log = function (...args) {
+    // console.log(args);
+}
+
 extract_csrf = function (r) {
     return r.match(csrf_re)[1];
 }
@@ -111,7 +115,7 @@ function JSON_to_URLEncoded(element, key, list) {
     return list.join('&');
 }
 
-function catchRedirect(uri, headers, body, method) {
+function catchRedirect(uri, headers, body, method, writefile) {
     return new Promise((resolve, reject) => {
         rp({
             headers: headers,
@@ -122,12 +126,17 @@ function catchRedirect(uri, headers, body, method) {
             followRedirect: false,
         })
             .then(res => {
-                reject('Failed to log in to We Connect');
+                log("Failed catching redirect: ", res.statusCode);
+                if(writefile) {
+                    writefile(res.body);
+                }
+                reject('Failed to log in to We Connect (catching redirect)');
             })
             .catch(err => {
-                if(err.response.headers) {
+                if(err.response && err.response.headers) {
                     resolve(err.response.headers.location);
                 } else {
+                    log("Error catching redirect: ", err);
                     reject('weconnect: Error catching redirect: ', err);
                 }
             })
@@ -149,10 +158,16 @@ function callLandingPage(landing_page_url) {
             method: 'GET',
         })
             .then(res => {
-                csrf = extract_csrf(res.body);
-                resolve(csrf);
+                if(res) {
+                    csrf = extract_csrf(res.body);
+                    resolve(csrf);
+                } else {
+                    log("Error calling landing page");
+                    reject ("Error calling landing page. Status: " + res.statusCode)
+                }
             })
             .catch(err => {
+                log("Error calling landing page: ", err);
                 reject(err);
             });
     });
@@ -173,6 +188,7 @@ function getLoginUrl(base_url, csrf, get_login_url) {
                 resolve(JSON.parse(res.body).loginURL["path"]);
             })
             .catch(err => {
+                log("Error getting login url: ", err);
                 reject(err);
             });
     });
@@ -226,6 +242,11 @@ function sendLoginPasssword(email, login_action_url_response_data, password, log
     contentLength = form.length;
     auth_headers['Content-Length'] = contentLength;
     auth_headers["Referer"] = login_action_url;
+    log("Calling rp:");
+    log("headers: ", auth_headers);
+    log("uri: ", login_action2_url);
+    log("form: ", form);
+    log("method: ", 'POST');
     return rp({
         headers: auth_headers,
         uri: login_action2_url,
@@ -247,7 +268,7 @@ function getFinalState(api_url) {
     });
 }
 
-exports.login = function (email, password) {
+exports.login = function (email, password, writefile) {
 
     return new Promise((resolve, reject) => {
 
@@ -266,20 +287,22 @@ exports.login = function (email, password) {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0.1; D5803 Build/23.5.A.1.291; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/63.0.3239.111 Mobile Safari/537.36'
         };
 
+        log("Calling landing page");
         callLandingPage(LANDING_PAGE_URL)
             .then(res => {
                 const csrf = res;
-                // console.log('Calling getLoginUrl');
+                log('Calling getLoginUrl');
+                log("Calling login url");
                 return (getLoginUrl(BASE_URL, csrf, GET_LOGIN_URL));
             })
             .then(res => {
                 const login_url = res;
-                // console.log('Calling catchRedirect');
-                return catchRedirect(login_url, auth_headers, '', 'GET');
+                log('Calling catchRedirect');
+                return catchRedirect(login_url, auth_headers, '', 'GET', writefile);
             })
             .then(res => {
                 const login_form_url = res;
-                // console.log('Calling getLoginActionUrl');
+                log('Calling getLoginActionUrl');
                 return getLoginActionUrl(login_form_url);
             })
             .then(res => {
@@ -287,7 +310,7 @@ exports.login = function (email, password) {
                 const login_relay_state_token = extract_login_relay_state_token(res.body);
                 const hmac_token = extract_login_hmac(res.body);
                 const login_csrf = extract_login_csrf(res.body);
-                // console.log('Calling sendLoginUserName');
+                log('Calling sendLoginUserName');
                 return sendLoginUserName(email, login_relay_state_token, login_csrf, hmac_token, login_form_url, login_action_url);
             })
             .then(res => {
@@ -295,18 +318,23 @@ exports.login = function (email, password) {
                 try {
                     login_action2_url = AUTH_BASE_URL + extract_login_action2_url(login_action_url_response_data);
                 } catch (e) {
+                    log("Error getting login action url: ", e);
                     reject('weconnect: Failed to log in. Wrong user: ' + email);
                     return;
                 }
-                // console.log('Calling sendLoginPasssword');
+                log('Calling sendLoginPasssword');
                 return sendLoginPasssword(email, login_action_url_response_data, password, login_action_url, login_action2_url);
             })
             .then(res => {
                 // Get base url
+                if(res.statusCode != 200) {
+                    reject("Error getting base url. Status: " + res.statusCode);
+                }
                 let portlet_code = '';
                 try {
                     portlet_code = extract_code(res.request.path);
                 } catch (e) {
+                    log("Error calling landing page: ", e);
                     reject('weconnect: Failed to log in. Wrong password. ' + e);
                     return;
                 }
@@ -319,27 +347,34 @@ exports.login = function (email, password) {
                 const form = JSON_to_URLEncoded(data);
                 const contentLength = form.length;
                 auth_headers['Content-Length'] = contentLength;
-                return catchRedirect(complete_login_url, auth_headers, form, 'POST');
+                log ("Calling catchRedirect to complete login url");
+                log("url: ", complete_login_url);
+                log("auth_headers: ", auth_headers);
+                log("form: ", form);
+                return catchRedirect(complete_login_url, auth_headers, form, 'POST', writefile);
             })
             .then(res => {
                 if (!res) {
+                    log("weconnect: Failed to login (get base url).");
                     reject('weconnect: Failed to login (get base url).');
                     return;
                 }
                 apiUrl = res; // Set global API url
                 delete auth_headers["Content-Length"];
-                // console.log('Calling getFinalState');
+                log('Calling getFinalState');
                 return getFinalState(apiUrl);
             })
             .then(res => {
+                log('Last login url response status: ' + res.statusCode);
                 const csrf = extract_csrf(res.body);
                 headers["Referer"] = apiUrl;
                 headers["X-CSRF-Token"] = csrf;
-                // console.log('resolving');
+                log('resolving');
                 resolve(this.api);
             })
             .catch(err => {
-                // console.log('rejecting');
+                log('rejecting');
+                log("Error: ", err);
                 reject(err);
             });
     });
