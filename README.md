@@ -1,6 +1,6 @@
 # MMM We Connect
 
-Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen, formerly known as Car-Net. 
+Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen, formerly known as Car-Net.
 
 The module shows a car sketch with information whether the car is connected to charging cable or not, charging or not, or if it is driving or parked. Based on configuration, it may also show where the car is parked, or how far away from home it is parked. It also shows how much energy is on the battery, end estimated range, as well as the total distance counter of the car.
 
@@ -8,12 +8,11 @@ The solution is using the We Connect login page in order to get a key, and is af
 
 Of course, you must have a We Connect subscription with username and password, and you should log in to the [We Connect portal](https://www.portal.volkswagen-we.com/portal) before using this module.
 
-I have only tested this with my eGolf, and it may behave differently with other models. I assume it also may behave a little different in other countries than Norway, where I have tested it. 
+I have only tested this with my eGolf, and it may behave differently with other models. I assume it also may behave a little different in other countries than Norway, where I have tested it.
 
 Feel free to help adapting it to other models.
 
 Here are my other [modules for MagicMirror](https://github.com/ottopaulsen/magic).
-
 
 ## Screenshot
 
@@ -25,7 +24,6 @@ The car is driving:
 
 ![Screenshot](doc/MMM-WeConnect-Screenshot-Driving.png)
 
-
 ## Installation
 
 Go to your `MagicMirror/modules` folder and write
@@ -34,12 +32,11 @@ Go to your `MagicMirror/modules` folder and write
     cd MMM-WeConnect
     npm install
 
-
-
 ## Configuration
 
 Here is an example configuration. Put it in the `MagicMirror/config/config.js` file:
-``` javascript
+
+```javascript
     {
         module: 'MMM-WeConnect',
         position: 'bottom_left',
@@ -81,8 +78,7 @@ Here is an example configuration. Put it in the `MagicMirror/config/config.js` f
     },
 ```
 
-
-Add entries for the positions you want to show with specific text (name). 
+Add entries for the positions you want to show with specific text (name).
 
 The homePosition should be set to the name of the position that represents home. This makes it possible to show how far away from home the car is, when it is not at any known position.
 
@@ -133,6 +129,10 @@ position
 last_connection
 ```
 
+## Troubleshooting
+
+The login procedure used to log in to We Connect is tricky, and often fails. The first thing to try when it fails is to log in from a normal browser. Some times there are one-time issues like for example a consent question, that must be answered. After that is done it might just work again.
+
 ## Contributions
 
 Grate thanks to [reneboer](https://github.com/reneboer), [Mirarkitty](https://github.com/Mirarkitty), [jaybora](https://github.com/jaybora), [Sneak-L8](https://github.com/Sneak-L8), [youpixel](https://github.com/youpixel), [birgersp](https://github.com/birgersp) and many others contributing to get the login procedure working, and for other information about the API. I specially leaned on [reneboer/python-carnet-client](https://github.com/reneboer/python-carnet-client) to get my Javascript version working.
@@ -141,12 +141,10 @@ If you want to help improving this module, that would be nice. Pull requests are
 
 Here are some improvements I have been thinking of, but not started:
 
-* Choose to show information in table or other form, instead of the drawing.
-* Improve the drawing. Not my profession...
-* Better support for other models, for example hybrid cars. I am not going to do that myself.
-* Show how long time or distance until next service.
-* Warn when it is getting close to service time.
+- Choose to show information in table or other form, instead of the drawing.
+- Improve the drawing. Not my profession...
+- Better support for other models, for example hybrid cars. I am not going to do that myself.
+- Show how long time or distance until next service.
+- Warn when it is getting close to service time.
 
 If you find bugs, please investigate them by turning on logging in the config, and create an issue containing the logged information, especially the information retrieved by node_helper from the We Connect API. NB! Keep your passward safe!
-
-
