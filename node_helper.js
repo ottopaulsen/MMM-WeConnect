@@ -75,14 +75,14 @@ module.exports = NodeHelper.create({
                     })
                     .catch(err => {
                         console.log("Error logging in to We Connect: ", err);
-                        carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
+                        carData.set("apiConnection", { label: "API Connection", value: "LOGIN ERROR", suffix: "" });
                         this.log('Sending data: ', carData);
                         this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
                     });
             })
             .catch(() => {
                 console.log("Internet not available");
-                carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
+                carData.set("apiConnection", { label: "API Connection", value: "NO INTERNET", suffix: "" });
                 this.log('Sending data: ', carData);
                 this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
             });

@@ -318,7 +318,7 @@ Module.register("MMM-WeConnect", {
             drawing.distance.hide();
         }
 
-        // Connection state
+        // Cable connection state
         if (carData.has("driving") && carData.get("driving").value == "NO") {
             if (carData.has("connectionState")) {
                 if (carData.get("connectionState").value == "CONNECTED") {
@@ -415,11 +415,19 @@ Module.register("MMM-WeConnect", {
         }
 
         // Last connection
-        if (carData.has("apiConnection") && carData.get("apiConnection").value == "OK") {
-            if (carData.has("lastConectionTime")) {
-                time = carData.get("lastConectionDate").value + " " + carData.get("lastConectionTime").value;
-                date = moment(time, "DD.MM.YYYY hh:mm");
-                drawing.lastConnection.text(this.calculateAge(date));
+        if(carData.has("apiConnection")) {
+            if (carData.get("apiConnection").value == "OK") {
+                if (carData.has("lastConectionTime")) {
+                    time = carData.get("lastConectionDate").value + " " + carData.get("lastConectionTime").value;
+                    date = moment(time, "DD.MM.YYYY hh:mm");
+                    drawing.lastConnection.text(this.calculateAge(date));
+                }
+            } else if (carData.get("apiConnection").value == "NO INTERNET") {
+                drawing.lastConnection.text("We have no internet");
+            } else if (carData.get("apiConnection").value == "NO LOGIN ERROR") {
+                drawing.lastConnection.text("We cannot login");
+            } else {
+                drawing.lastConnection.text("We don't connect");
             }
         } else {
             drawing.lastConnection.text("We don't connect");
