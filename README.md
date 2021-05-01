@@ -1,3 +1,14 @@
+# 
+
+## Unfortunately, Volkswagen has shut down their web version of We Connect, that this module was based upon, so this module is not working any more.
+
+## If you have information on how to access the API, please create an issue and supply any useful information.
+
+
+
+#
+
+
 # MMM We Connect
 
 Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen, formerly known as Car-Net.
