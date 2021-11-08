@@ -10,7 +10,7 @@
   "license": "MIT",
   "dependencies": {
     "internet-available": "^1.0.0",
-    "jsonpointer": "^4.0.1",
+    "jsonpointer": "^5.0.0",
     "moment": "^2.24.0",
     "request": "^2.88.0",
     "request-promise": "^4.2.4",
