@@ -1,167 +1,213 @@
-// "use strict";
+"use strict";
 
-const NodeHelper = require("node_helper");
-const weconnect = require("./weconnect");
-const jsonpointer = require("jsonpointer");
+const NodeHelper        = require("node_helper");
+const weconnect         = require("./weconnect");
+const { SetupRequiredError } = weconnect;
 const internetAvailable = require("internet-available");
 
-let carData = new Map();
-
-let resources = [
-    // { path: '/-/msgc/get-new-messages', values: [
-    // ]},
-    // { path: '/-/vsr/request-vsr', values: [
-    // ]},
-    {
-        path: '/-/vsr/get-vsr', values: [
-            { sourceKey: '/vehicleStatusData/totalRange', key: 'range', label: 'Range', suffix: 'km' },
-            { sourceKey: '/vehicleStatusData/batteryLevel', key: 'battery', label: 'Battery level', suffix: '%' },
-        ]
-    },
-    {
-        path: '/-/cf/get-location', values: [
-            { sourceKey: '/position/lat', key: 'latitude', label: 'Latitude', suffix: '' },
-            { sourceKey: '/position/lng', key: 'longitude', label: 'Longitude', suffix: '' },
-        ]
-    },
-    {
-        path: '/-/vehicle-info/get-vehicle-details', values: [
-            { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/0', key: 'lastConectionDate', label: 'Last connection date', suffix: '' },
-            { sourceKey: '/vehicleDetails/lastConnectionTimeStamp/1', key: 'lastConectionTime', label: 'Last connection time', suffix: '' },
-            { sourceKey: '/vehicleDetails/distanceCovered', key: 'distanceCovered', label: 'Distance', suffix: 'km' },
-            { sourceKey: '/vehicleDetails/serviceInspectionData', key: 'service', label: 'Service in', suffix: '' },
-        ]
-    },
-    {
-        path: '/-/emanager/get-emanager', values: [
-            { sourceKey: '/EManager/rbc/status/chargingState', key: 'charging', label: 'Charging', suffix: '' },
-            { sourceKey: '/EManager/rbc/status/chargingRemaningHour', key: 'chargingRemainingHour', label: 'Remaining hours', suffix: 'h' },
-            { sourceKey: '/EManager/rbc/status/chargingRemaningMinute', key: 'chargingRemainingMinute', label: 'Remaining minutes', suffix: 'm' },
-            { sourceKey: '/EManager/rbc/status/pluginState', key: 'connectionState', label: 'Connection state', suffix: '' },
-        ]
+/*
+ * EU Data Act field → carData key mapping.
+ *
+ * The normalized dataset uses dotted field names like
+ * "battery_state_report.soc". We flatten the parts we care about into the
+ * flat carData Map that the front-end already understands.
+ */
+function mapDatasetToCarData(dataset, carData) {
+    function get(obj, ...keys) {
+        for (const k of keys) {
+            const parts = k.split(".");
+            let cur = obj;
+            for (const p of parts) {
+                if (cur == null) break;
+                cur = cur[p];
+            }
+            if (cur !== undefined && cur !== null) return cur;
+        }
+        return null;
     }
-];
 
+    // Battery SoC (%) — not available for all models via EU Data Act portal
+    const soc = get(dataset,
+        "battery_state_report.soc",
+        "battery_level",
+        "soc_electric_vehicle",
+        "state_of_charge");
+    if (soc !== null) {
+        carData.set("battery", { label: "Battery level", value: Math.round(soc), suffix: "%" });
+    }
+
+    // Cruising range (km) — not available for all models via EU Data Act portal
+    const range = get(dataset,
+        "cruising_range_combined",
+        "battery_state_report.cruising_range",
+        "cruising_range_electric",
+        "cruising_range_primary_engine");
+    if (range !== null) {
+        carData.set("range", { label: "Range", value: Math.round(range), suffix: "km" });
+    }
+
+    // Charging state — use direct field first (actual field name from portal)
+    const chargingState = get(dataset,
+        "charging_state",
+        "charging_state_report.current_charge_state",
+        "energy_flow");
+    if (chargingState !== null) {
+        const s = String(chargingState).toUpperCase();
+        const isCharging = (s.includes("CHARG") || s.includes("FLOW")) &&
+                           !s.includes("NOT_") && !s.includes("OFF") &&
+                           !s.includes("READY") && !s.includes("ERROR");
+        carData.set("charging", { label: "Charging", value: isCharging ? "CHARGING" : "NOT_CHARGING", suffix: "" });
+    }
+
+    // Remaining charging time (minutes) → convert to hours + minutes
+    const remainMin = get(dataset,
+        "remaining_charging_time_target_soc",
+        "battery_state_report.remaining_charging_time_complete",
+        "remaining_charging_time",
+        "charging_state_report.remaining_charging_time");
+    // Only use if it's a positive number (portal sometimes returns "minSOC" or similar strings)
+    if (remainMin !== null && typeof remainMin === "number" && remainMin > 0) {
+        const h = Math.floor(remainMin / 60);
+        const m = remainMin % 60;
+        carData.set("chargingRemainingHour",   { label: "Remaining hours",   value: h, suffix: "h" });
+        carData.set("chargingRemainingMinute",  { label: "Remaining minutes", value: m, suffix: "m" });
+    }
+
+    // Outside temperature — portal reports in tenths of Kelvin (e.g. 2861 = 286.1 K = 12.95°C)
+    const temp = get(dataset, "outside_temperature");
+    if (temp !== null && typeof temp === "number" && temp > 0) {
+        const celsius = Math.round((temp / 10 - 273.15) * 10) / 10;
+        if (celsius > -60 && celsius < 60) { // sanity check
+            carData.set("outsideTemp", { label: "Outside temp", value: celsius, suffix: "°C" });
+        }
+    }
+
+    // Plug / connection state
+    const plugState = get(dataset,
+        "plug_state",
+        "charging_state_report.plug_connection_state",
+        "plug_connection_state");
+    if (plugState !== null) {
+        const connected = String(plugState).toUpperCase().includes("CONNECT") &&
+                          !String(plugState).toUpperCase().includes("DISCONNECT");
+        carData.set("connectionState", { label: "Connection state", value: connected ? "CONNECTED" : "DISCONNECTED", suffix: "" });
+    }
+
+    // Mileage / odometer
+    const mileage = get(dataset, "mileage.value", "mileage");
+    if (mileage !== null) {
+        carData.set("distanceCovered", { label: "Distance", value: Math.round(mileage), suffix: "km" });
+    }
+
+    // Driving: EU Data Act data is snapshotted every 15 min, not real-time.
+    // Only set driving=NO when we actually have plug state data (car is parked).
+    // Without plug state we leave driving unset, so no cable will be drawn.
+    if (plugState !== null) {
+        carData.set("driving", { label: "Driving", value: "NO", suffix: "" });
+    }
+
+    // Lock state
+    const lockState = get(dataset, "lock_state");
+    if (lockState !== null) {
+        const locked = String(lockState).toLowerCase() === "locked";
+        carData.set("lockState", { label: "Lock state", value: locked ? "LOCKED" : "UNLOCKED", suffix: "" });
+    }
+
+    // Dataset timestamp
+    if (dataset._createdOn) {
+        carData.set("lastDatasetTime", { label: "Last data", value: dataset._createdOn, suffix: "" });
+    }
+}
 
 module.exports = NodeHelper.create({
-
-    start: function () {
-        console.log(this.name + ': Starting node helper');
-        this.loaded = false;
+    start() {
+        console.log(this.name + ": Starting node helper");
+        this.api            = null;
+        this.config         = null;
+        this.vin            = null;
+        this.carData        = new Map();
+        this._setupLogged   = false; // suppress repeated setup messages
     },
 
-    log: function (...args) {
-        if (this.config.logging) {
-            console.log(args);
+    log(...args) {
+        if (this.config && this.config.logging) {
+            console.log(...args);
         }
     },
 
-    startReadingData: function () {
+    startReadingData() {
         this.readData();
-        setInterval(() => {
-            this.readData();
-        }, this.config.refreshIntervalSeconds * 1000);
+        setInterval(() => this.readData(), this.config.refreshIntervalSeconds * 1000);
     },
 
-    readData: function () {
+    async initApi() {
+        if (this.api) return;
+        const { email, password } = this.config;
+        if (!email || !password) throw new Error("No email/password configured – add email and password to your MMM-WeConnect config");
+        // Always log weconnect internals so login issues are visible
+        const log = (...args) => console.log(this.name + ":", ...args);
+        this.api = weconnect.login(email, password, log);
+    },
+
+    async resolveVin() {
+        if (this.vin) return this.vin;
+        if (this.config.vin) { this.vin = this.config.vin; return this.vin; }
+
+        console.log(this.name + ": No VIN in config – discovering vehicles...");
+        const vins = await this.api.listVehicles();
+        if (!vins.length) throw new Error(
+            "No vehicles found in the EU Data Act portal. " +
+            "Please set up continuous data at https://eu-data-act.drivesomethinggreater.com/"
+        );
+        if (vins.length > 1) {
+            console.log(this.name + ": Multiple VINs found: " + vins.join(", ") + ". Using first. Add 'vin' to config to pick one.");
+        }
+        this.vin = vins[0];
+        console.log(this.name + ": Using VIN " + this.vin);
+        return this.vin;
+    },
+
+    async readData() {
         internetAvailable()
-            .then(() => {
-                carData.set("magicMirrorOnline", true);
-                this.loginWeConnect(this.config)
-                    .then(api => {
-                        resources.forEach(resource => {
-                            this.readCarData(api, resource);
-                        });
-                    })
-                    .catch(err => {
-                        console.log("Error logging in to We Connect: ", err);
-                        carData.set("apiConnection", { label: "API Connection", value: "LOGIN ERROR", suffix: "" });
-                        this.log('Sending data: ', carData);
-                        this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-                    });
+            .then(async () => {
+                try {
+                    await this.initApi();
+                    const vin     = await this.resolveVin();
+                    const dataset = await this.api.getLatestDataset(vin);
+
+                    this._setupLogged = false; // reset if data flows again
+                    // Log complete dataset for inspection
+                    const { _meta, _datasetName, _createdOn, ...dataFields } = dataset;
+                    console.log(this.name + ": Full dataset (" + _createdOn + "):\n" +
+                        JSON.stringify(dataFields, null, 2));
+                    mapDatasetToCarData(dataset, this.carData);
+                    this.carData.set("apiConnection", { label: "API Connection", value: "OK", suffix: "" });
+                    this.log(this.name + ": carData updated", Object.fromEntries(this.carData));
+                } catch (err) {
+                    if (err instanceof SetupRequiredError) {
+                        // Log the setup instructions once, then stay quiet
+                        if (!this._setupLogged) {
+                            console.log(this.name + ": Setup required:\n" + err.message);
+                            this._setupLogged = true;
+                        }
+                        this.carData.set("apiConnection", { label: "API Connection", value: "SETUP_REQUIRED", suffix: "" });
+                    } else {
+                        console.error(this.name + ": Error reading car data:", err.message || err);
+                        this.carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
+                    }
+                }
+                this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
             })
             .catch(() => {
-                console.log("Internet not available");
-                carData.set("apiConnection", { label: "API Connection", value: "NO INTERNET", suffix: "" });
-                this.log('Sending data: ', carData);
-                this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
+                console.log(this.name + ": No internet available");
+                this.carData.set("apiConnection", { label: "API Connection", value: "NO INTERNET", suffix: "" });
+                this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
             });
     },
 
-    loginWeConnect: function (config, me, retries = 1) {
-        return new Promise((resolve, reject) => {
-            this.log(this.name + ': Logging in to WeConnect (' + retries + ')');
-            let self = this;
-            weconnect.login(config.email, config.password)
-                .then(api => {
-                    self.log(self.name + ': Logged in to WeConnect');
-                    self.loaded = true;
-                    resolve(api);
-                })
-                .catch(err => {
-                    console.log(self.name + ': ', err);
-                    if (retries <= 2) {
-                        console.log(self.name + 'Retrying');
-                        resolve(self.loginWeConnect(config, me, retries + 1));
-                    } else {
-                        reject("Cannot log in to We Connect");
-                    }
-                });
-        })
-    },
-
-    readCarData: function (api, resource) {
-        this.log(this.name + ': Reading car data for ' + resource.path);
-
-        api(resource.path)
-            .then(data => {
-                if (this.config.logging) {
-                    // The log args fucks up the formatting, so must use console.log here
-                    console.log('data: ', data);
-                    console.log('Got data for ' + resource.path + ': ', JSON.stringify(JSON.parse(data), null, 2));
-                }
-
-                if (resource.path == '/-/cf/get-location') {
-                    driving = data == '{"errorCode":"0"}' ? "YES" : "NO";
-                    carData.set("driving", { label: "Driving", value: driving, suffix: "" });
-                }
-
-                carData.set("apiConnection", {
-                    label: "API Connection",
-                    value: jsonpointer.get(JSON.parse(data), '/errorCode') == 0 ? "OK" : "ERROR",
-                    suffix: ""
-                });
-
-                resource.values.forEach((value, key) => {
-                    let res = jsonpointer.get(JSON.parse(data), value.sourceKey);
-                    carData.set(value.key, {
-                        label: value.label,
-                        value: res,
-                        suffix: value.suffix
-                    });
-                });
-                this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-            })
-            .catch(err => {
-                console.log('Error reading car data (' + resource.path + '): ', err);
-                resource.values.forEach((value, key) => {
-                    carData.set(value.key, {
-                        label: value.label,
-                        value: "",
-                        suffix: value.suffix
-                    });
-                });
-            })
-        // this.log('Sending data: ', carData);
-        this.sendSocketNotification('WECONNECT_CARDATA', JSON.stringify([...carData.entries()]));
-    },
-
-
-    socketNotificationReceived: function (notification, payload) {
-        // this.log(this.name + ': Socket notification received: ', notification, ': ', payload);
-        if (notification === 'WECONNECT_CONFIG') {
-            var config = payload;
-            this.config = config;
+    socketNotificationReceived(notification, payload) {
+        if (notification === "WECONNECT_CONFIG") {
+            this.config = payload;
             this.startReadingData();
         }
     },

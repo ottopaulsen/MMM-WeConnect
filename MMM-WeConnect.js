@@ -3,7 +3,6 @@ Module.register("MMM-WeConnect", {
 
     getScripts: function () {
         return [
-            this.file('node_modules/jsonpointer/jsonpointer.js'),
             this.file('node_modules/svg.js/dist/svg.js'),
             'moment.js'
         ];
@@ -58,6 +57,12 @@ Module.register("MMM-WeConnect", {
         this.sendSocketNotification('WECONNECT_CONFIG', this.config);
         moment().format();
         moment.locale(config.language);
+        // Refresh "time since last update" every 30 seconds
+        setInterval(() => {
+            if (this.carDrawing) {
+                this.updateLastConnection(this.carDrawing, this.carData);
+            }
+        }, 30 * 1000);
     },
 
     log: function(...args) {
@@ -276,6 +281,34 @@ Module.register("MMM-WeConnect", {
             .move(372, -10)
             .font({ size: 20, anchor: "end", fill: textColor })
             .attr('id', 'last_connection');
+        const outsideTemp = svg.text("")
+            .move(100, -10)
+            .font({ size: 32, anchor: "start", fill: textColor })
+            .hide()
+            .attr('id', 'outside_temp');
+
+        // Padlock — shown in car window when parked; green=locked, red=unlocked
+        // Window center ≈ x=245, y=85 (viewbox 0 0 400 400)
+        const lockGroup = svg.group().attr('id', 'lock_group').hide();
+        const lockBody = lockGroup.rect(40, 26)
+            .move(225, 88)
+            .radius(6)
+            .fill("#555")
+            .attr('id', 'lock_body');
+        // Keyhole
+        lockGroup.circle(9).center(245, 99).fill("#333");
+        lockGroup.rect(5, 7).move(243, 103).fill("#333");
+        // Locked shackle: both legs in body (full U), short arc
+        const lockShackleLocked = lockGroup.path("M234,88 v-12 a11,11 0 0 1 22,0 v12")
+            .stroke({ width: 6, color: "#888" })
+            .fill("none")
+            .attr('id', 'lock_shackle_locked');
+        // Unlocked shackle: left leg in body, right leg raised free
+        const lockShackleOpen = lockGroup.path("M234,88 v-12 a11,11 0 0 1 22,0")
+            .stroke({ width: 6, color: "#888" })
+            .fill("none")
+            .hide()
+            .attr('id', 'lock_shackle_open');
 
         if (!config.showConnectionStatus) lastConnection.hide();
         if (!config.showBattery) battery.hide();
@@ -305,6 +338,11 @@ Module.register("MMM-WeConnect", {
             driver,
             driverHead,
             lastConnection,
+            outsideTemp,
+            lockGroup,
+            lockBody,
+            lockShackleLocked,
+            lockShackleOpen,
             antenna,
             antennaTop
         }
@@ -318,24 +356,59 @@ Module.register("MMM-WeConnect", {
             drawing.distance.hide();
         }
 
-        // Cable connection state
-        if (carData.has("driving") && carData.get("driving").value == "NO") {
-            if (carData.has("connectionState")) {
-                if (carData.get("connectionState").value == "CONNECTED") {
-                    drawing.cableConnected.show();
-                    drawing.cableDisConnected.hide();
-                } else {
-                    drawing.cableConnected.hide();
-                    drawing.cableDisConnected.show();
-                }
-            }
-            drawing.wall.show();
-            drawing.chargerBox.show();
+        // Outside temperature
+        if (carData.has("outsideTemp")) {
+            const t = carData.get("outsideTemp");
+            drawing.outsideTemp.text(t.value + t.suffix).show();
         } else {
+            drawing.outsideTemp.hide();
+        }
+
+        // Padlock — only when parked
+        const isNotDriving = !carData.has("driving") || carData.get("driving").value === "NO";
+        if (carData.has("lockState") && isNotDriving) {
+            const locked = carData.get("lockState").value === "LOCKED";
+            const lockColor = locked ? "#00dd50" : "#dd2828";
+            drawing.lockBody.fill(lockColor);
+            drawing.lockShackleLocked.stroke({ width: 6, color: lockColor });
+            drawing.lockShackleOpen.stroke({ width: 6, color: lockColor });
+            if (locked) {
+                drawing.lockShackleLocked.show();
+                drawing.lockShackleOpen.hide();
+            } else {
+                drawing.lockShackleLocked.hide();
+                drawing.lockShackleOpen.show();
+            }
+            drawing.lockGroup.show();
+        } else {
+            drawing.lockGroup.hide();
+        }
+
+        // Cable connection state
+        const isConnected = carData.has("connectionState") && carData.get("connectionState").value === "CONNECTED";
+        if (isNotDriving && carData.has("connectionState")) {
+            if (isConnected) {
+                drawing.cableConnected.show();
+                drawing.cableDisConnected.hide();
+                drawing.wall.show();
+                drawing.chargerBox.show();
+            } else {
+                drawing.cableConnected.hide();
+                drawing.cableDisConnected.show();
+                drawing.wall.show();
+                drawing.chargerBox.show();
+            }
+        } else if (!isNotDriving) {
             drawing.cableConnected.hide();
             drawing.cableDisConnected.hide();
             drawing.wall.hide();
             drawing.chargerBox.hide();
+        } else {
+            // driving=NO but no connectionState data → hide cable entirely, show wall
+            drawing.cableConnected.hide();
+            drawing.cableDisConnected.hide();
+            drawing.wall.show();
+            drawing.chargerBox.show();
         }
 
         // Charging
@@ -365,7 +438,7 @@ Module.register("MMM-WeConnect", {
             drawing.batteryLevel.width(drawing.batteryBody.width() * level / 100).show();
 
             let colors;
-            for (i = 0; i < config.batteryColors.length; i++) {
+            for (let i = 0; i < config.batteryColors.length; i++) {
                 colors = config.batteryColors[i];
                 if (level < config.batteryColors[i].upTo) {
                     break;
@@ -378,18 +451,23 @@ Module.register("MMM-WeConnect", {
             if (config.showBatteryPercent) {
                 drawing.batteryPercent.text("" + level + " " + carData.get("battery").suffix).fill(colors.text);
             }
-            if (config.showRange) {
+            if (config.showRange && carData.has("range")) {
                 drawing.range.text("" + carData.get("range").value + " " + carData.get("range").suffix);
             }
         }
 
         // Position
         if (config.showPosition) {
-            if (carData.has("driving") && carData.get("driving").value == "NO" && carData.has("latitude")) {
-                const p = this.findPosition(carData);
-                drawing.position.text(p);
+            if (carData.has("latitude")) {
+                if (carData.has("driving") && carData.get("driving").value == "NO") {
+                    const p = this.findPosition(carData);
+                    drawing.position.text(p);
+                } else {
+                    drawing.position.text(this.translate("DRIVING"));
+                }
             } else {
-                drawing.position.text(this.translate("DRIVING"));
+                // No GPS data available from EU Data Act portal
+                drawing.position.hide();
             }
         }
 
@@ -409,28 +487,32 @@ Module.register("MMM-WeConnect", {
                 drawing.rightLight.fill(config.colors.lightsOff);
                 drawing.driver.hide();
                 drawing.driverHead.hide();
-                drawing.wall.show();
-                drawing.chargerBox.show();
             }
         }
 
-        // Last connection
-        if(carData.has("apiConnection")) {
+        // Last connection / data freshness
+        this.updateLastConnection(drawing, carData);
+    },
+
+    updateLastConnection: function (drawing, carData) {
+        if (!drawing) return;
+        if (carData instanceof Map && carData.has("apiConnection")) {
             if (carData.get("apiConnection").value == "OK") {
-                if (carData.has("lastConectionTime")) {
-                    time = carData.get("lastConectionDate").value + " " + carData.get("lastConectionTime").value;
-                    date = moment(time, "DD.MM.YYYY hh:mm");
+                if (carData.has("lastDatasetTime")) {
+                    const timeStr = carData.get("lastDatasetTime").value;
+                    const date = moment(timeStr);
                     drawing.lastConnection.text(this.calculateAge(date));
+                } else {
+                    drawing.lastConnection.text("We Connect");
                 }
             } else if (carData.get("apiConnection").value == "NO INTERNET") {
                 drawing.lastConnection.text("We have no internet");
-            } else if (carData.get("apiConnection").value == "NO LOGIN ERROR") {
-                drawing.lastConnection.text("We cannot login");
+            } else if (carData.get("apiConnection").value == "SETUP_REQUIRED") {
+                drawing.lastConnection.text("Setup required – see log");
             } else {
                 drawing.lastConnection.text("We don't connect");
             }
         } else {
             drawing.lastConnection.text("We don't connect");
         }
-    }
-});
+    }});

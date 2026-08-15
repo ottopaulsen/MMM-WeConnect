@@ -1,505 +1,473 @@
 /*
+ * weconnect.js — VW EU Data Act portal client for MMM-WeConnect
+ *
+ * The old VW WeConnect portal (portal.volkswagen-we.com) was shut down.
+ * This implementation uses the EU Data Act portal at
+ * https://eu-data-act.drivesomethinggreater.com, which publishes 15-minute
+ * vehicle snapshots (battery, range, charging, mileage, etc.) for all VW
+ * Group brands.
+ *
+ * PREREQUISITE: You must activate continuous data once in a browser:
+ *   1. Go to https://eu-data-act.drivesomethinggreater.com/
+ *   2. Log in with your VW credentials (same email/password as the app)
+ *   3. Connect your car under "Data clusters → Vehicle overview"
+ *   4. Click "Get customised data" → select All data, frequency 15 minutes
+ *
+ * Ported from TA2k/ioBroker.vw-connect (lib/euDataAct.js).
+ */
 
-Usage example:
+"use strict";
 
-    weconnect = require('./weconnect');
+const request = require("request");
+const zlib    = require("zlib");
 
-    await weconnect.login(CARNET_USERNAME, CARNET_PASSWORD).catch(err => {
-        console.log("Exception: ", err);
-    });
-    
-    let res = await weconnect.api('/-/vehicle-info/get-vehicle-details');
-    console.log('API res = ', res);
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-Alternative:
+const BASE_URL       = "https://eu-data-act.drivesomethinggreater.com";
+const IDENTITY_BASE  = "https://identity.vwgroup.io";
+const OIDC_CLIENT_ID = "9b58543e-1c15-4193-91d5-8a14145bebb0@apps_vw-dilab_com";
+const OIDC_SCOPE     = "openid cars profile";
+const OIDC_REDIRECT  = BASE_URL + "/login";
+const OIDC_STATE     = "de__en__VOLKSWAGEN_PASSENGER_CARS";
+const USER_AGENT     = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36";
+const NO_CONTENT_SUFFIX = "_no_content_found.zip";
 
-    weconnect = require('./weconnect');
+/** Thrown when the portal is accessible but the user needs to do browser setup. */
+class SetupRequiredError extends Error {
+    constructor(msg) { super(msg); this.name = "SetupRequiredError"; }
+}
+exports.SetupRequiredError = SetupRequiredError;
 
-    weconnect.login(CARNET_USERNAME, CARNET_PASSWORD)
-    .then(api => {
-        api('/-/vehicle-info/get-vehicle-details')
-        .then(res => {
-            console.log('API res = ', res);
-        })
-    })
+const VEHICLES_PATH = "/proxy_api/consent/me/vehicles";
+const METADATA_PATH = "/proxy_api/euda-apim/datarequest/vehicles/{vin}/metadata/partial";
+const LIST_PATH     = "/proxy_api/euda-apim/datadelivery/vehicles/{vin}/{id}/list";
+const DOWNLOAD_PATH = "/proxy_api/euda-apim/datadelivery/vehicles/{vin}/{id}/download";
 
-Known functions:
-    '/-/msgc/get-new-messages'
-    '/-/vsr/request-vsr'
-    '/-/vsr/get-vsr'
-    '/-/cf/get-location'
-    '/-/vehicle-info/get-vehicle-details'
-    '/-/emanager/get-emanager'
-
-*/
-
-const RP = require("request-promise");
-
-let auth_headers = {};
-
-let headers = {
-  Accept: "application/json, text/plain, */*",
-  "Content-Type": "application/json;charset=UTF-8",
-  "User-Agent":
-    "Mozilla/5.0 (Linux; Android 6.0.1; D5803 Build/23.5.A.1.291; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/63.0.3239.111 Mobile Safari/537.36"
+// Sentinel values the portal emits when a sensor has no current reading
+const GENERIC_INT_SENTINELS = new Set([65535, 2147483647, 4294967295]);
+const MINUS_ONE_SENTINEL_FIELDS = new Set([
+    "remaining_charging_time",
+    "remaining_charging_time_to_complete",
+    "battery_state_report.remaining_charging_time_complete",
+    "battery_state_report.remaining_charging_time_bulk",
+    "remaining_charging_time_target_soc",
+]);
+const MONOTONIC_FIELDS = new Set(["mileage.value", "mileage"]);
+const FIELD_ALIASES = {
+    remaining_climatisation_time:   "remaining_climate_time",
+    charging_plug1_connectionstate: "plug_state",
 };
+const SUM_FALLBACKS = [{
+    target:     "cruising_range_combined",
+    components: ["cruising_range_primary_engine", "cruising_range_secondary_engine"],
+}];
 
-const AUTH_BASE_URL = "https://identity.vwgroup.io";
-const BASE_URL = "https://www.portal.volkswagen-we.com";
-const LANDING_PAGE_URL = BASE_URL + "/portal/no_NO/web/guest/home";
-const GET_LOGIN_URL =
-  BASE_URL + "/portal/en_GB/web/guest/home/-/csrftokenhandling/get-login-url";
-const COMPLETE_LOGIN_URL = BASE_URL + "/portal/web/guest/complete-login";
+// ─── HTML helpers ────────────────────────────────────────────────────────────
 
-const csrf_re = new RegExp('<meta name="_csrf" content="([^"]*)"/>');
-const login_action_url_re = new RegExp(
-  '<formclass="content"id="emailPasswordForm"name="emailPasswordForm"method="POST"novalidate*.*action="([^"]*)">'
-);
-const login_action_url2_re = new RegExp(
-  '<formclass="content"id="credentialsForm"name="credentialsForm"method="POST"action="([^"]*)">'
-);
-const login_relay_state_token_re = new RegExp(
-  '<inputtype="hidden"id="input_relayState"name="relayState"value="([^"]*)"/>'
-);
-const login_csrf_re = new RegExp(
-  '<inputtype="hidden"id="csrf"name="_csrf"value="([^"]*)"/>'
-);
-const login_hmac_re = new RegExp(
-  '<inputtype="hidden"id="hmac"name="hmac"value="([^"]*)"/>'
-);
-const authcode_re = new RegExp('&code=([^"]*)');
-
-let apiUrl = "";
-
-log = function (...args) {
-  console.log(args);
-};
-
-extract_csrf = function (r) {
-  return r.match(csrf_re)[1];
-};
-
-extract_login_action_url = function (r) {
-  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-  return loginhtml.match(login_action_url_re)[1];
-};
-
-extract_login_action2_url = function (r) {
-  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-  return loginhtml.match(login_action_url2_re)[1];
-};
-
-extract_login_relay_state_token = function (r) {
-  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-  return loginhtml.match(login_relay_state_token_re)[1];
-};
-
-extract_login_hmac = function (r) {
-  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-  return loginhtml.match(login_hmac_re)[1];
-};
-
-extract_login_csrf = function (r) {
-  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-  return loginhtml.match(login_csrf_re)[1];
-};
-
-extract_code = function (r) {
-  return r.match(authcode_re)[1];
-};
-
-build_complete_login_url = function (state) {
-  return (
-    COMPLETE_LOGIN_URL +
-    "?p_auth=" +
-    state +
-    "&p_p_id=33_WAR_cored5portlet&p_p_lifecycle=1&p_p_state=normal&p_p_mode=view&p_p_col_id=column-1&p_p_col_count=1&_33_WAR_cored5portlet_javax.portlet.action=getLoginStatus"
-  );
-};
-
-remove_whitespace = function (r) {
-  return r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
-};
-
-function JSON_to_URLEncoded(element, key, list) {
-  var list = list || [];
-  if (typeof element == "object") {
-    for (var idx in element)
-      JSON_to_URLEncoded(element[idx], key ? key + "[" + idx + "]" : idx, list);
-  } else {
-    list.push(key + "=" + encodeURIComponent(element));
-  }
-  return list.join("&");
+function parseFirstForm(html) {
+    const m = /<form\b[^>]*\baction=("[^"]*"|'[^']*'|[^\s>]+)[^>]*>([\s\S]*?)<\/form>/i.exec(html);
+    if (!m) return { action: null, fields: {} };
+    const action = m[1].replace(/^['"]|['"]$/g, "");
+    const fields = {};
+    const re = /<input\b[^>]*>/gi;
+    let t;
+    while ((t = re.exec(m[2])) !== null) {
+        const nm = /\bname=("[^"]*"|'[^']*'|[^\s>]+)/i.exec(t[0]);
+        if (!nm) continue;
+        const name = nm[1].replace(/^['"]|['"]$/g, "");
+        const val  = /\bvalue=("[^"]*"|'[^']*'|[^\s>]+)/i.exec(t[0]);
+        fields[name] = val ? val[1].replace(/^['"]|['"]$/g, "") : "";
+    }
+    return { action, fields };
 }
 
-function catchRedirect(uri, headers, body, method, writefile) {
-  return new Promise((resolve, reject) => {
-    rp({
-      headers: headers,
-      uri: uri,
-      body: body,
-      method: method,
-      resolveWithFullResponse: true,
-      followRedirect: false,
-      rejectUnauthorized: false
-    })
-      .then((res) => {
-        log("Failed catching redirect: ", res.statusCode);
-        if (writefile) {
-          writefile(res.body);
+function extractTemplateModel(html) {
+    const idx = html.indexOf("templateModel");
+    if (idx < 0) return null;
+    const brace = html.indexOf("{", idx);
+    if (brace < 0) return null;
+    let depth = 0;
+    for (let i = brace; i < html.length; i++) {
+        if (html[i] === "{") depth++;
+        else if (html[i] === "}") {
+            if (--depth === 0) {
+                try { return JSON.parse(html.substring(brace, i + 1)); } catch { return null; }
+            }
         }
-        reject("Failed to log in to We Connect (catching redirect)");
-      })
-      .catch((err) => {
-        if (err.response && err.response.headers) {
-          resolve(err.response.headers.location);
-        } else {
-          log("Error catching redirect: ", err);
-          reject("weconnect: Error catching redirect: ", err);
+    }
+    return null;
+}
+
+function extractCsrf(html) {
+    const m = /csrf_token\s*[:=]\s*['"]([^'"]+)['"]/.exec(html);
+    return m ? m[1] : null;
+}
+
+function loginFields(html) {
+    const form   = parseFirstForm(html);
+    const fields = { ...form.fields };
+    const model  = extractTemplateModel(html) || {};
+    for (const key of ["hmac", "relayState"]) {
+        if (model[key]) fields[key] = model[key];
+    }
+    const email = (model.emailPasswordForm || {}).email;
+    if (email && fields.email == null) fields.email = email;
+    const csrf = extractCsrf(html);
+    if (csrf && fields._csrf == null) fields._csrf = csrf;
+    return { fields, action: form.action };
+}
+
+// ─── ZIP parser (built-in zlib, no external deps) ────────────────────────────
+
+function unzipFirstJson(buf, name) {
+    let off = 0;
+    while (off + 30 <= buf.length) {
+        if (buf.readUInt32LE(off) !== 0x04034b50) break;
+        const flags    = buf.readUInt16LE(off + 6);
+        const method   = buf.readUInt16LE(off + 8);
+        const compSize = buf.readUInt32LE(off + 18);
+        const nameLen  = buf.readUInt16LE(off + 26);
+        const extraLen = buf.readUInt16LE(off + 28);
+        const fileName = buf.slice(off + 30, off + 30 + nameLen).toString("utf-8");
+        const dataStart = off + 30 + nameLen + extraLen;
+        let entrySize = compSize;
+        if ((flags & 0x08) && compSize === 0) {
+            let scan = dataStart;
+            while (scan + 4 <= buf.length) { if (buf.readUInt32LE(scan) === 0x08074b50) break; scan++; }
+            entrySize = scan - dataStart;
         }
-      });
-  });
-}
-
-let savedEmail = "";
-let savedPassword = "";
-
-let rp = null;
-let cookieJar = null;
-
-function callLandingPage(landing_page_url) {
-  // Call landing page and return csrf
-  return new Promise((resolve, reject) => {
-    rp({
-      uri: landing_page_url,
-      resolveWithFullResponse: true,
-      rejectUnauthorized: false,
-      method: "GET"
-    })
-      .then((res) => {
-        if (res) {
-          csrf = extract_csrf(res.body);
-          resolve(csrf);
-        } else {
-          log("Error calling landing page");
-          reject("Error calling landing page. Status: " + res.statusCode);
+        const compressed = buf.slice(dataStart, dataStart + entrySize);
+        if (fileName.toLowerCase().endsWith(".json")) {
+            let raw;
+            if      (method === 0) raw = compressed;
+            else if (method === 8) raw = zlib.inflateRawSync(compressed);
+            else throw new Error(`Unsupported zip method ${method}`);
+            let text = raw.toString("utf-8");
+            if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+            return { fileName, json: JSON.parse(text) };
         }
-      })
-      .catch((err) => {
-        log("Error calling landing page: ", err);
-        reject(err);
-      });
-  });
+        off = dataStart + entrySize;
+        if (flags & 0x08) off += (buf.readUInt32LE(off) === 0x08074b50) ? 16 : 12;
+    }
+    throw new Error(`No JSON entry found inside ${name}`);
 }
 
-function getLoginUrl(base_url, csrf, get_login_url) {
-  return new Promise((resolve, reject) => {
-    auth_headers["Referer"] = base_url + "/portal";
-    auth_headers["X-CSRF-Token"] = csrf;
-    rp({
-      headers: auth_headers,
-      uri: get_login_url,
-      resolveWithFullResponse: true,
-      followAllRedirects: true,
-      rejectUnauthorized: false,
-      method: "POST"
-    })
-      .then((res) => {
-        resolve(JSON.parse(res.body).loginURL["path"]);
-      })
-      .catch((err) => {
-        log("Error getting login url: ", err);
-        reject(err);
-      });
-  });
+// ─── Data normalisation ──────────────────────────────────────────────────────
+
+function isSentinel(value, fieldName) {
+    if (value === null || value === undefined) return true;
+    if (typeof value === "string" && value.trim() === "") return true;
+    const num = typeof value === "number" ? value : parseFloat(value);
+    if (!Number.isFinite(num)) return false;
+    if (GENERIC_INT_SENTINELS.has(num)) return true;
+    if (MINUS_ONE_SENTINEL_FIELDS.has(fieldName) && num === -1) return true;
+    if (fieldName && fieldName.includes("tyre_pressure") && (num === 0 || num === 1)) return true;
+    return false;
 }
 
-function getLoginActionUrl(login_form_url) {
-  return rp({
-    headers: auth_headers,
-    uri: login_form_url,
-    resolveWithFullResponse: true,
-    followAllRedirects: true,
-    rejectUnauthorized: false,
-    method: "GET"
-  });
+function coerceValue(raw) {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw === "number" || typeof raw === "boolean") return raw;
+    const n = Number(raw);
+    return (!isNaN(n) && String(raw).trim() !== "") ? n : raw;
 }
 
-function sendLoginUserName(
-  email,
-  login_relay_state_token,
-  login_csrf,
-  hmac_token,
-  login_form_url,
-  login_action_url
-) {
-  let data = {
-    email: email,
-    relayState: login_relay_state_token,
-    _csrf: login_csrf,
-    hmac: hmac_token
-  };
-  let form = JSON_to_URLEncoded(data);
-  auth_headers["Content-Length"] = form.length;
-  auth_headers["Referer"] = login_form_url;
-  auth_headers["Content-Type"] = "application/x-www-form-urlencoded";
-  delete auth_headers["X-CSRF-Token"];
-  return rp({
-    headers: auth_headers,
-    uri: login_action_url,
-    form: form,
-    method: "POST",
-    resolveWithFullResponse: true,
-    followAllRedirects: true,
-    rejectUnauthorized: false
-  });
+function setNested(obj, dottedKey, value) {
+    const parts = dottedKey.split(".");
+    let cur = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (cur[parts[i]] == null || typeof cur[parts[i]] !== "object") cur[parts[i]] = {};
+        cur = cur[parts[i]];
+    }
+    const leaf = parts[parts.length - 1];
+    if (cur[leaf] != null && typeof cur[leaf] === "object" && typeof value !== "object") {
+        cur[leaf]._value = value;
+    } else {
+        cur[leaf] = value;
+    }
 }
 
-function sendLoginPasssword(
-  email,
-  login_action_url_response_data,
-  password,
-  login_action_url,
-  login_action2_url
-) {
-  // Send login password and get action url
-  const login_relay_state_token2 = extract_login_relay_state_token(
-    login_action_url_response_data
-  );
-  const hmac_token2 = extract_login_hmac(login_action_url_response_data);
-  const login_csrf2 = extract_login_csrf(login_action_url_response_data);
-  data = {
-    email: email,
-    relayState: login_relay_state_token2,
-    _csrf: login_csrf2,
-    hmac: hmac_token2,
-    password: password
-  };
-  form = JSON_to_URLEncoded(data);
-  contentLength = form.length;
-  auth_headers["Content-Length"] = contentLength;
-  auth_headers["Referer"] = login_action_url;
-  log("Calling rp:");
-  log("headers: ", auth_headers);
-  log("uri: ", login_action2_url);
-  log("form: ", form);
-  log("method: ", "POST");
-  return rp({
-    headers: auth_headers,
-    uri: login_action2_url,
-    form: form,
-    method: "POST",
-    resolveWithFullResponse: true,
-    followAllRedirects: true,
-    rejectUnauthorized: false
-  });
-}
-
-function getFinalState(api_url) {
-  // Complete login and get final state
-  return rp({
-    headers: auth_headers,
-    uri: api_url,
-    resolveWithFullResponse: true,
-    followAllRedirects: true,
-    method: "GET",
-    rejectUnauthorized: false
-  });
-}
-
-exports.login = function (email, password, writefile) {
-  return new Promise((resolve, reject) => {
-    savedEmail = email;
-    savedPassword = password;
-
-    cookieJar = RP.jar();
-    rp = RP.defaults({ jar: cookieJar });
-
-    let login_form_url = "";
-    let login_action_url = "";
-    let login_action2_url = "";
-
-    auth_headers = {
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-      "User-Agent":
-        "Mozilla/5.0 (Linux; Android 6.0.1; D5803 Build/23.5.A.1.291; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/63.0.3239.111 Mobile Safari/537.36"
-    };
-
-    log("Calling landing page");
-    callLandingPage(LANDING_PAGE_URL)
-      .then((res) => {
-        const csrf = res;
-        log("Calling getLoginUrl");
-        log("Calling login url");
-        return getLoginUrl(BASE_URL, csrf, GET_LOGIN_URL);
-      })
-      .then((res) => {
-        const login_url = res;
-        log("Calling catchRedirect");
-        return catchRedirect(login_url, auth_headers, "", "GET", writefile);
-      })
-      .then((res) => {
-        const login_form_url = res;
-        log("Calling getLoginActionUrl");
-        return getLoginActionUrl(login_form_url);
-      })
-      .then((res) => {
-        login_action_url = AUTH_BASE_URL + extract_login_action_url(res.body);
-        const login_relay_state_token = extract_login_relay_state_token(
-          res.body
-        );
-        const hmac_token = extract_login_hmac(res.body);
-        const login_csrf = extract_login_csrf(res.body);
-        log("Calling sendLoginUserName");
-        return sendLoginUserName(
-          email,
-          login_relay_state_token,
-          login_csrf,
-          hmac_token,
-          login_form_url,
-          login_action_url
-        );
-      })
-      .then((res) => {
-        const login_action_url_response_data = remove_whitespace(res.body);
-        try {
-          login_action2_url =
-            AUTH_BASE_URL +
-            extract_login_action2_url(login_action_url_response_data);
-        } catch (e) {
-          log("Error getting login action url: ", e);
-          reject("weconnect: Failed to log in. Wrong user: " + email);
-          return;
+function normalizeDataset(payload) {
+    const points = {};
+    let seq = 0;
+    for (const item of payload.Data || []) {
+        if (!item || !item.key) continue;
+        let field = item.dataFieldName || item.key;
+        if (!field) continue;
+        if (FIELD_ALIASES[field]) field = FIELD_ALIASES[field];
+        const s = isSentinel(item.value, field);
+        const cur = points[field];
+        if (!cur) { points[field] = { item, seq: seq++, s }; continue; }
+        if (cur.s && !s) { cur.item = item; cur.seq = seq++; cur.s = false; continue; }
+        if (!cur.s && s) continue;
+        if (MONOTONIC_FIELDS.has(field)) {
+            const a = parseFloat(item.value), b = parseFloat(cur.item.value);
+            if (Number.isFinite(a) && (!Number.isFinite(b) || a > b)) { cur.item = item; cur.seq = seq++; cur.s = s; }
+        } else if (seq > cur.seq) {
+            cur.item = item; cur.seq = seq++; cur.s = s;
+        } else { seq++; }
+    }
+    const out = {};
+    for (const [field, { item, s }] of Object.entries(points)) {
+        if (!s) setNested(out, field, coerceValue(item.value));
+    }
+    for (const { target, components } of SUM_FALLBACKS) {
+        if (points[target] && !points[target].s) continue;
+        let sum = 0, any = false;
+        for (const c of components) {
+            const p = points[c];
+            if (!p || p.s) continue;
+            const n = parseFloat(p.item.value);
+            if (Number.isFinite(n)) { sum += n; any = true; }
         }
-        log("Calling sendLoginPasssword");
-        return sendLoginPasssword(
-          email,
-          login_action_url_response_data,
-          password,
-          login_action_url,
-          login_action2_url
-        );
-      })
-      .then((res) => {
-        // Get base url
-        if (res.statusCode != 200) {
-          reject("Error getting base url. Status: " + res.statusCode);
-        }
-        let portlet_code = "";
-        log("Extracting portlet code from: ", res.request.path);
-        try {
-          portlet_code = extract_code(res.request.path);
-        } catch (e) {
-          log("Error calling landing page: ", e);
-          reject("weconnect: Failed to log in. Wrong password. " + e);
-          return;
-        }
-        auth_headers["Referer"] = login_action2_url;
-        const csrf = extract_csrf(res.body);
-        const complete_login_url = build_complete_login_url(csrf);
-        const data = {
-          _33_WAR_cored5portlet_code: portlet_code
-        };
-        const form = JSON_to_URLEncoded(data);
-        const contentLength = form.length;
-        auth_headers["Content-Length"] = contentLength;
-        log("Calling catchRedirect to complete login url");
-        log("url: ", complete_login_url);
-        log("auth_headers: ", auth_headers);
-        log("form: ", form);
-        return catchRedirect(
-          complete_login_url,
-          auth_headers,
-          form,
-          "POST",
-          writefile
-        );
-      })
-      .then((res) => {
-        if (!res) {
-          log("weconnect: Failed to login (get base url).");
-          reject("weconnect: Failed to login (get base url).");
-          return;
-        }
-        apiUrl = res; // Set global API url
-        delete auth_headers["Content-Length"];
-        log("Calling getFinalState");
-        return getFinalState(apiUrl);
-      })
-      .then((res) => {
-        log("Last login url response status: " + res.statusCode);
-        const csrf = extract_csrf(res.body);
-        headers["Referer"] = apiUrl;
-        headers["X-CSRF-Token"] = csrf;
-        log("resolving");
-        resolve(this.api);
-      })
-      .catch((err) => {
-        log("rejecting");
-        log("Error: ", err);
-        reject(err);
-      });
-  });
-};
+        if (any) setNested(out, target, sum);
+    }
+    out._meta = { vin: payload.vin || null, points: (payload.Data || []).length };
+    return out;
+}
 
-tryApi = function (uri) {
-  return new Promise((resolve, reject) => {
-    if (!apiUrl) {
-      reject(
-        "weconnect error: You must successfully call login before doing api calls."
-      );
-      return;
+// ─── HTTP client ─────────────────────────────────────────────────────────────
+
+class VwEuDataActClient {
+    constructor(email, password, log) {
+        this.email    = email;
+        this.password = password;
+        this.log      = log || (() => {});
+        this.jar      = request.jar();
+        this._loggedIn = false;
     }
 
-    rp({
-      headers: headers,
-      uri: apiUrl + uri,
-      method: "POST",
-      resolveWithFullResponse: true,
-      followAllRedirects: true,
-      rejectUnauthorized: false
-    })
-      .then((res) => {
-        response = res;
-        resolve(response);
-      })
-      .catch((err) => {
-        response = {
-          statusCode: 0,
-          body: err.message
-        };
-        resolve(response);
-      });
-  });
+    _req(opts) {
+        return new Promise((resolve, reject) => {
+            request({ jar: this.jar, gzip: true, ...opts }, (err, resp, body) => {
+                if (err) reject(err);
+                else resolve({ resp, body });
+            });
+        });
+    }
+
+    async _getText(url, headers) {
+        const { resp, body } = await this._req({
+            method: "GET",
+            url,
+            headers: { "User-Agent": USER_AGENT, ...(headers || {}) },
+        });
+        const text = String(body || "");
+        this.log(`[weconnect] GET ${url} → ${resp.statusCode} (${text.length}B)`);
+        return { status: resp.statusCode, url: resp.request.uri.href, body: text };
+    }
+
+    async _postForm(url, form, extra) {
+        const { resp, body } = await this._req({
+            method: "POST",
+            url,
+            form,
+            followAllRedirects: true,
+            headers: { "User-Agent": USER_AGENT, ...(extra || {}) },
+        });
+        const text = String(body || "");
+        this.log(`[weconnect] POST ${url} → ${resp.statusCode} (${text.length}B) landed=${resp.request.uri.href}`);
+        return { status: resp.statusCode, url: resp.request.uri.href, body: text };
+    }
+
+    async _getBuffer(url, headers) {
+        const { resp, body } = await this._req({
+            method: "GET",
+            url,
+            encoding: null,
+            headers: { "User-Agent": USER_AGENT, Accept: "application/zip,application/octet-stream,*/*", ...(headers || {}) },
+        });
+        const buf = Buffer.isBuffer(body) ? body : Buffer.from(body || "");
+        this.log(`[weconnect] GET ${url} (binary) → ${resp.statusCode} (${buf.length}B)`);
+        return { status: resp.statusCode, body: buf };
+    }
+
+    async _getJson(url, headers, _retry = false) {
+        const r = await this._getText(url, { Accept: "application/json", ...(headers || {}) });
+        const aemHtml = r.status >= 500 && r.body && r.body.trimStart().startsWith("<");
+        if ((r.status === 401 || r.status === 403 || aemHtml) && !_retry) {
+            this.log(`[weconnect] Session expired (${r.status}), re-logging in`);
+            this._loggedIn = false;
+            this.jar = request.jar(); // fresh cookie jar on re-login
+            await this.login();
+            return this._getJson(url, headers, true);
+        }
+        if (r.status === 401 || r.status === 403) {
+            throw new Error(
+                `HTTP ${r.status} from portal API — login session not established. ` +
+                `Please complete one-time setup at ${BASE_URL}/ in a browser first ` +
+                `(log in with your VW credentials, connect your car, and set up continuous data).`
+            );
+        }
+        if (r.status >= 400) throw new Error(`GET ${url} → HTTP ${r.status}: ${r.body.substring(0, 200)}`);
+        try {
+            return JSON.parse(r.body);
+        } catch (e) {
+            throw new Error(`Invalid JSON from ${url}: ${r.body.substring(0, 200)}`);
+        }
+    }
+
+    async login() {
+        this.log("[weconnect] Starting EU Data Act portal login");
+
+        // Prime portal session cookies
+        try { await this._getText(BASE_URL + "/"); } catch (_) { /* ignore */ }
+
+        // Build OIDC authorize URL with required state parameter
+        const params = new URLSearchParams({
+            client_id:     OIDC_CLIENT_ID,
+            response_type: "code",
+            scope:         OIDC_SCOPE,
+            state:         OIDC_STATE,
+            redirect_uri:  OIDC_REDIRECT,
+            prompt:        "login",
+        });
+        const authUrl = `${IDENTITY_BASE}/oidc/v1/authorize?${params.toString()}`;
+        const signin  = await this._getText(authUrl);
+        if (signin.status !== 200) throw new Error(`VW identity authorize returned HTTP ${signin.status}`);
+
+        // Step 1: POST email (identifier step)
+        let { fields, action } = loginFields(signin.body);
+        if (!fields.hmac || !fields._csrf) throw new Error("Could not parse VW sign-in form – portal layout may have changed");
+        fields.email = this.email;
+        const idAction = new URL(action || "", signin.url).toString();
+        this.log(`[weconnect] Submitting email to ${idAction}`);
+        const pwPage   = await this._postForm(idAction, fields, { Referer: signin.url });
+
+        // Step 2: POST password (authenticate step)
+        ({ fields, action } = loginFields(pwPage.body));
+        if (!fields.hmac || !fields._csrf) {
+            const model = extractTemplateModel(pwPage.body) || {};
+            const msg   = (model.error && (model.error.text || model.error)) || "Identity portal did not return password form – check your email address";
+            throw new Error(msg);
+        }
+        fields.email    = this.email;
+        fields.password = this.password;
+        const authAction = action ? new URL(action, pwPage.url).toString() : pwPage.url.split("?", 1)[0];
+        this.log(`[weconnect] Submitting password to ${authAction}`);
+        const landing    = await this._postForm(authAction, fields, { Referer: pwPage.url });
+
+        this.log(`[weconnect] Login landed at: ${landing.url} (status ${landing.status})`);
+
+        if (landing.status >= 400) throw new Error(`VW login rejected (HTTP ${landing.status})`);
+        if (landing.url.includes("signin-service") || landing.url.includes("/error")) {
+            const model   = extractTemplateModel(landing.body) || {};
+            const errCode = model.error || new URL(landing.url).searchParams.get("error") || "unknown";
+            throw new Error(`VW login failed: ${errCode} – check your credentials`);
+        }
+        if (new URL(landing.url).host !== new URL(BASE_URL).host) {
+            throw new Error(
+                `Login did not complete (landed at ${landing.url}). ` +
+                `Please log in once at ${BASE_URL}/ in a browser to accept the EU Data Act portal consent.`
+            );
+        }
+        this.log("[weconnect] Login successful");
+        this._loggedIn = true;
+    }
+
+    async ensureLogin() {
+        if (!this._loggedIn) await this.login();
+    }
+
+    /** Returns array of VIN strings for all vehicles linked to the account. */
+    async listVehicles() {
+        await this.ensureLogin();
+        const payload = await this._getJson(`${BASE_URL}${VEHICLES_PATH}?viewPosition=FRONT_LEFT`);
+        const list    = Array.isArray(payload) ? payload : (payload && payload.vehicles) || [];
+        return list.map(v => (typeof v === "string" ? v : v.vin)).filter(Boolean);
+    }
+
+    /** Fetch the latest available dataset for the given VIN. */
+    async getLatestDataset(vin) {
+        await this.ensureLogin();
+
+        // Get the data-request Identifier for this VIN
+        const metaUrl = `${BASE_URL}${METADATA_PATH.replace("{vin}", vin)}`;
+        let meta;
+        try {
+            meta = await this._getJson(metaUrl);
+        } catch (err) {
+            if (err.message && err.message.includes("404")) {
+                throw new SetupRequiredError(
+                    `No continuous data request found for VIN ${vin}.\n` +
+                    `  → Open ${BASE_URL}/ in a browser and log in with your VW credentials.\n` +
+                    `  → Go to: Data clusters → Vehicle overview → Connect your car\n` +
+                    `  → Click "Get customised data" → All data → Frequency: 15 minutes\n` +
+                    `  Once done, data will start appearing within ~15 minutes.`
+                );
+            }
+            throw err;
+        }
+        if (!meta || !meta.Identifier) {
+            throw new SetupRequiredError(
+                `No active continuous data request for VIN ${vin}. ` +
+                `Please set up data at ${BASE_URL}/ → Data clusters → Vehicle overview → Get customised data.`
+            );
+        }
+        const id = meta.Identifier;
+
+        // List available datasets, skip empty "no content" entries
+        const listUrl  = `${BASE_URL}${LIST_PATH.replace("{vin}", vin).replace("{id}", id)}`;
+        let datasets;
+        try {
+            datasets = await this._getJson(listUrl, { type: "partial" });
+        } catch (err) {
+            // 404 "No files available" is normal when the car hasn't been active yet
+            if (err.message && err.message.includes("404")) {
+                throw new SetupRequiredError(
+                    `No data files available yet for VIN ${vin}.\n` +
+                    `  The portal generates snapshots every ~15 min when the car is active.\n` +
+                    `  → Open the VW app and trigger a sync, OR drive/charge the car.\n` +
+                    `  The module will automatically pick up data once it appears.`
+                );
+            }
+            throw err;
+        }
+        const files    = (Array.isArray(datasets) ? datasets : datasets.files || [])
+            .filter(d => d && d.name && !d.name.endsWith(NO_CONTENT_SUFFIX));
+
+        if (!files.length) {
+            throw new Error(
+                "No data available yet. The portal generates datasets every ~15 minutes when the car is active. " +
+                "Try driving or charging the car to trigger data collection."
+            );
+        }
+
+        // Sort by createdOn descending, take the newest
+        const newest = files.slice().sort(
+            (a, b) => String(b.createdOn || b.name).localeCompare(String(a.createdOn || a.name))
+        )[0];
+
+        // Download and parse the ZIP
+        const dlUrl = `${BASE_URL}${DOWNLOAD_PATH.replace("{vin}", vin).replace("{id}", id)}`;
+        const buf   = await this._getBuffer(dlUrl, { filename: newest.name, type: "partial" });
+        if (buf.status >= 400) throw new Error(`Dataset download failed: HTTP ${buf.status}`);
+
+        const { json } = unzipFirstJson(buf.body, newest.name);
+        const normalized = normalizeDataset(json);
+        normalized._datasetName = newest.name;
+        normalized._createdOn   = newest.createdOn || null;
+        return normalized;
+    }
+}
+
+// ─── Module exports ──────────────────────────────────────────────────────────
+
+let client = null;
+
+/**
+ * Login to the VW EU Data Act portal and return an API object.
+ * @param {string} email    VW account email
+ * @param {string} password VW account password
+ * @returns {{ listVehicles, getLatestDataset }}
+ */
+exports.login = function (email, password, log) {
+    client = new VwEuDataActClient(email, password, log);
+    return {
+        listVehicles:      () => client.listVehicles(),
+        getLatestDataset:  (vin) => client.getLatestDataset(vin),
+    };
 };
 
-exports.api = function (uri, secondTime = false) {
-  return new Promise((resolve, reject) => {
-    tryApi(uri)
-      .then((response) => {
-        if (response.body == '{"errorCode":"2"}') {
-          if (secondTime) {
-            const msg = "Second login attempt. Failing.";
-            console.log(msg);
-            reject(msg);
-            return;
-          }
-          console.log("weconnect token expired. Logging in again.");
-          this.login(savedEmail, savedPassword)
-            .then((api) => {
-              resolve(api(uri, true));
-              return;
-            })
-            .catch((err) => {
-              reject(err);
-              return;
-            });
-        }
-        resolve(response.body);
-      })
-      .catch((err) => {
-        reject(err);
-      });
-  });
-};
+/*
+*/

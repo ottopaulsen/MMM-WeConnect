@@ -1,6 +1,51 @@
-# 
+# MMM-WeConnect
 
-## Unfortunately, Volkswagen has shut down their web version of We Connect, that this module was based upon, so this module is not working any more.
+MagicMirror module for Volkswagen cars using the **EU Data Act portal** — the only currently working data source for VW Group vehicles.
+
+> ⚠️ **The old VW WeConnect portal (`portal.volkswagen-we.com`) was shut down.** This module has been rewritten to use the EU Data Act portal (`eu-data-act.drivesomethinggreater.com`).
+
+## One-time portal setup (required)
+
+Before the module works, you must activate continuous data delivery once in a browser:
+
+1. Open **[https://eu-data-act.drivesomethinggreater.com/](https://eu-data-act.drivesomethinggreater.com/)**
+2. Log in with your **VW account** (same email/password as the VW app)
+3. Go to **Data clusters → Vehicle overview**
+4. Click **Connect your car** if your VIN is not already listed
+5. Click **Get customised data** → select *All data*, frequency *15 minutes*
+
+The portal will then start generating datasets every ~15 minutes **when your car is active** (driving, charging, or when you trigger a sync from the VW app).
+
+## Configuration
+
+```javascript
+{
+    module: 'MMM-WeConnect',
+    position: 'bottom_left',
+    config: {
+        email: 'your-vw-account@email.com',
+        password: 'your-vw-password',
+        vin: 'WVWZZZ1JZ3W000000',  // optional – auto-discovered if omitted
+        refreshIntervalSeconds: 900, // 15 minutes (data updates at this rate)
+        size: 300,
+        showDistance: true,
+        showBatteryPercent: true,
+        showRange: true,
+        showConnectionStatus: true,
+        showDriving: true,
+        showBattery: true,
+        logging: false,
+    }
+}
+```
+
+## Notes
+
+- Data is available **every ~15 minutes** when the car is active (driving, charging). Parked cars may not produce data.
+- GPS position is **not** available via the EU Data Act portal — the position display has been removed.
+- To force a data refresh, open the VW app and trigger a sync.
+
+---
 
 ## If you have information on how to access the API, please create an issue and supply any useful information.
 
