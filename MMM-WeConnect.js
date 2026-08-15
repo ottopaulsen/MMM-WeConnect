@@ -4,7 +4,6 @@ Module.register("MMM-WeConnect", {
     getScripts: function () {
         return [
             this.file('node_modules/svg.js/dist/svg.js'),
-            'moment.js'
         ];
     },
 
@@ -55,8 +54,6 @@ Module.register("MMM-WeConnect", {
         this.carData = [];
         this.loaded = true;
         this.sendSocketNotification('WECONNECT_CONFIG', this.config);
-        moment().format();
-        moment.locale(config.language);
         // Refresh "time since last update" every 30 seconds
         setInterval(() => {
             if (this.carDrawing) {
@@ -500,7 +497,7 @@ Module.register("MMM-WeConnect", {
             if (carData.get("apiConnection").value == "OK") {
                 if (carData.has("lastDatasetTime")) {
                     const timeStr = carData.get("lastDatasetTime").value;
-                    const date = moment(timeStr);
+                    const date = new Date(timeStr);
                     drawing.lastConnection.text(this.calculateAge(date));
                 } else {
                     drawing.lastConnection.text("We Connect");

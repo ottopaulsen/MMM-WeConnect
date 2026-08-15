@@ -9,9 +9,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "internet-available": "^1.0.0",
-    "moment": "^2.29.0",
-    "request": "^2.88.2",
     "svg.js": "^2.7.1"
   }
 }

@@ -18,8 +18,7 @@
 
 "use strict";
 
-const request = require("request");
-const zlib    = require("zlib");
+const zlib = require("zlib");
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -228,58 +227,109 @@ function normalizeDataset(payload) {
 
 // ─── HTTP client ─────────────────────────────────────────────────────────────
 
+// Minimal cookie jar: stores cookies per hostname, handles redirect chains.
+class CookieJar {
+    constructor() { this._store = {}; }
+
+    set(url, setCookieHeaders) {
+        const h = new URL(url).hostname;
+        if (!this._store[h]) this._store[h] = {};
+        for (const hdr of (setCookieHeaders || [])) {
+            const [kv] = hdr.split(";");
+            const eq = kv.indexOf("=");
+            if (eq < 0) continue;
+            this._store[h][kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim();
+        }
+    }
+
+    header(url) {
+        const h = new URL(url).hostname;
+        const jar = this._store[h] || {};
+        return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
+    }
+
+    reset() { this._store = {}; }
+}
+
 class VwEuDataActClient {
     constructor(email, password, log) {
         this.email    = email;
         this.password = password;
         this.log      = log || (() => {});
-        this.jar      = request.jar();
+        this.jar      = new CookieJar();
         this._loggedIn = false;
     }
 
-    _req(opts) {
-        return new Promise((resolve, reject) => {
-            request({ jar: this.jar, gzip: true, ...opts }, (err, resp, body) => {
-                if (err) reject(err);
-                else resolve({ resp, body });
+    // Fetch with manual redirect following so cookies are sent per-domain.
+    async _fetch(method, url, opts = {}) {
+        let currentUrl = url;
+        let currentMethod = method;
+        let body = opts.body;
+
+        for (let i = 0; i <= 10; i++) {
+            const cookieHdr = this.jar.header(currentUrl);
+            const headers = {
+                "User-Agent": USER_AGENT,
+                ...(cookieHdr ? { Cookie: cookieHdr } : {}),
+                ...(opts.headers || {}),
+            };
+            if (body && currentMethod === "POST") {
+                headers["Content-Type"] = "application/x-www-form-urlencoded";
+            }
+
+            const resp = await fetch(currentUrl, {
+                method: currentMethod,
+                headers,
+                body: currentMethod === "POST" ? body : undefined,
+                redirect: "manual",
             });
-        });
+
+            // Collect Set-Cookie headers from this hop
+            const setCookies = resp.headers.getSetCookie
+                ? resp.headers.getSetCookie()
+                : [resp.headers.get("set-cookie")].filter(Boolean);
+            this.jar.set(currentUrl, setCookies);
+
+            // Follow redirect manually
+            if (resp.status >= 301 && resp.status <= 308 && resp.headers.has("location")) {
+                currentUrl = new URL(resp.headers.get("location"), currentUrl).toString();
+                if (resp.status === 301 || resp.status === 302 || resp.status === 303) {
+                    currentMethod = "GET";
+                    body = undefined;
+                }
+                continue;
+            }
+
+            return { resp, finalUrl: currentUrl };
+        }
+        throw new Error(`Too many redirects from ${url}`);
     }
 
     async _getText(url, headers) {
-        const { resp, body } = await this._req({
-            method: "GET",
-            url,
-            headers: { "User-Agent": USER_AGENT, ...(headers || {}) },
-        });
-        const text = String(body || "");
-        this.log(`[weconnect] GET ${url} → ${resp.statusCode} (${text.length}B)`);
-        return { status: resp.statusCode, url: resp.request.uri.href, body: text };
+        const { resp, finalUrl } = await this._fetch("GET", url, { headers });
+        const text = await resp.text();
+        this.log(`[weconnect] GET ${url} → ${resp.status} (${text.length}B)`);
+        return { status: resp.status, url: finalUrl, body: text };
     }
 
     async _postForm(url, form, extra) {
-        const { resp, body } = await this._req({
-            method: "POST",
-            url,
-            form,
-            followAllRedirects: true,
-            headers: { "User-Agent": USER_AGENT, ...(extra || {}) },
+        const body = new URLSearchParams(form).toString();
+        const { resp, finalUrl } = await this._fetch("POST", url, {
+            body,
+            headers: extra || {},
         });
-        const text = String(body || "");
-        this.log(`[weconnect] POST ${url} → ${resp.statusCode} (${text.length}B) landed=${resp.request.uri.href}`);
-        return { status: resp.statusCode, url: resp.request.uri.href, body: text };
+        const text = await resp.text();
+        this.log(`[weconnect] POST ${url} → ${resp.status} (${text.length}B) landed=${finalUrl}`);
+        return { status: resp.status, url: finalUrl, body: text };
     }
 
     async _getBuffer(url, headers) {
-        const { resp, body } = await this._req({
-            method: "GET",
-            url,
-            encoding: null,
-            headers: { "User-Agent": USER_AGENT, Accept: "application/zip,application/octet-stream,*/*", ...(headers || {}) },
+        const { resp } = await this._fetch("GET", url, {
+            headers: { Accept: "application/zip,application/octet-stream,*/*", ...(headers || {}) },
         });
-        const buf = Buffer.isBuffer(body) ? body : Buffer.from(body || "");
-        this.log(`[weconnect] GET ${url} (binary) → ${resp.statusCode} (${buf.length}B)`);
-        return { status: resp.statusCode, body: buf };
+        const buf = Buffer.from(await resp.arrayBuffer());
+        this.log(`[weconnect] GET ${url} (binary) → ${resp.status} (${buf.length}B)`);
+        return { status: resp.status, body: buf };
     }
 
     async _getJson(url, headers, _retry = false) {
@@ -288,7 +338,7 @@ class VwEuDataActClient {
         if ((r.status === 401 || r.status === 403 || aemHtml) && !_retry) {
             this.log(`[weconnect] Session expired (${r.status}), re-logging in`);
             this._loggedIn = false;
-            this.jar = request.jar(); // fresh cookie jar on re-login
+            this.jar = new CookieJar();
             await this.login();
             return this._getJson(url, headers, true);
         }

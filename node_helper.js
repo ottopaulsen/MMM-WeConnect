@@ -1,9 +1,9 @@
 "use strict";
 
 const NodeHelper        = require("node_helper");
+const dns               = require("dns").promises;
 const weconnect         = require("./weconnect");
 const { SetupRequiredError } = weconnect;
-const internetAvailable = require("internet-available");
 
 /*
  * EU Data Act field → carData key mapping.
@@ -106,11 +106,24 @@ function mapDatasetToCarData(dataset, carData) {
         carData.set("driving", { label: "Driving", value: "NO", suffix: "" });
     }
 
-    // Lock state
-    const lockState = get(dataset, "lock_state");
-    if (lockState !== null) {
-        const locked = String(lockState).toLowerCase() === "locked";
+    // Lock state — use individual door locked_state_* fields (2=locked, observed from data)
+    // The top-level lock_state string field doesn't update reliably.
+    const doorLockFields = [
+        "locked_state_front_left_door", "locked_state_front_right_door",
+        "locked_state_rear_right_door", "locked_state__rear_left_door",
+    ];
+    const doorLockValues = doorLockFields.map(f => dataset[f]).filter(v => v !== undefined && v !== null);
+    if (doorLockValues.length > 0) {
+        // 2 = locked (observed: changed 3→2 when user locked car)
+        const lockedCount = doorLockValues.filter(v => v === 2).length;
+        const locked = lockedCount >= Math.ceil(doorLockValues.length / 2);
         carData.set("lockState", { label: "Lock state", value: locked ? "LOCKED" : "UNLOCKED", suffix: "" });
+    } else {
+        // Fallback to string field
+        const lockState = get(dataset, "lock_state");
+        if (lockState !== null) {
+            carData.set("lockState", { label: "Lock state", value: String(lockState).toLowerCase() === "locked" ? "LOCKED" : "UNLOCKED", suffix: "" });
+        }
     }
 
     // Dataset timestamp
@@ -136,8 +149,27 @@ module.exports = NodeHelper.create({
     },
 
     startReadingData() {
-        this.readData();
-        setInterval(() => this.readData(), this.config.refreshIntervalSeconds * 1000);
+        this.scheduleRead(0);
+    },
+
+    // Schedule next read: 15 min + 30 s after the last dataset timestamp,
+    // so we poll shortly after the portal is expected to have a new snapshot.
+    scheduleRead(delayMs) {
+        setTimeout(() => this.readData(), delayMs);
+    },
+
+    nextReadDelay(createdOn) {
+        const PORTAL_INTERVAL_MS = 15 * 60 * 1000;
+        const BUFFER_MS          = 30 * 1000;
+        const MIN_DELAY_MS       = 60 * 1000;   // never poll more often than 1 min
+        const FALLBACK_MS        = 5 * 60 * 1000; // on error, retry in 5 min
+        if (!createdOn) return FALLBACK_MS;
+        const nextExpected = new Date(createdOn).getTime() + PORTAL_INTERVAL_MS + BUFFER_MS;
+        const delay = nextExpected - Date.now();
+        const clamped = Math.max(delay, MIN_DELAY_MS);
+        const mins = Math.round(clamped / 60000);
+        console.log(this.name + ": Next data check in ~" + mins + " min (portal updates at " + new Date(nextExpected).toLocaleTimeString() + ")");
+        return clamped;
     },
 
     async initApi() {
@@ -168,41 +200,43 @@ module.exports = NodeHelper.create({
     },
 
     async readData() {
-        internetAvailable()
-            .then(async () => {
-                try {
-                    await this.initApi();
-                    const vin     = await this.resolveVin();
-                    const dataset = await this.api.getLatestDataset(vin);
+        const online = await dns.lookup("eu-data-act.drivesomethinggreater.com").then(() => true).catch(() => false);
+        if (!online) {
+            console.log(this.name + ": No internet available");
+            this.carData.set("apiConnection", { label: "API Connection", value: "NO INTERNET", suffix: "" });
+            this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
+            this.scheduleRead(60 * 1000); // retry in 1 min
+            return;
+        }
+        let createdOn = null;
+        try {
+            await this.initApi();
+            const vin     = await this.resolveVin();
+            const dataset = await this.api.getLatestDataset(vin);
+            createdOn = dataset._createdOn;
 
-                    this._setupLogged = false; // reset if data flows again
-                    // Log complete dataset for inspection
-                    const { _meta, _datasetName, _createdOn, ...dataFields } = dataset;
-                    console.log(this.name + ": Full dataset (" + _createdOn + "):\n" +
-                        JSON.stringify(dataFields, null, 2));
-                    mapDatasetToCarData(dataset, this.carData);
-                    this.carData.set("apiConnection", { label: "API Connection", value: "OK", suffix: "" });
-                    this.log(this.name + ": carData updated", Object.fromEntries(this.carData));
-                } catch (err) {
-                    if (err instanceof SetupRequiredError) {
-                        // Log the setup instructions once, then stay quiet
-                        if (!this._setupLogged) {
-                            console.log(this.name + ": Setup required:\n" + err.message);
-                            this._setupLogged = true;
-                        }
-                        this.carData.set("apiConnection", { label: "API Connection", value: "SETUP_REQUIRED", suffix: "" });
-                    } else {
-                        console.error(this.name + ": Error reading car data:", err.message || err);
-                        this.carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
-                    }
+            this._setupLogged = false; // reset if data flows again
+            // Log complete dataset for inspection
+            const { _meta, _datasetName, _createdOn, ...dataFields } = dataset;
+            console.log(this.name + ": Full dataset (" + _createdOn + "):\n" +
+                JSON.stringify(dataFields, null, 2));
+            mapDatasetToCarData(dataset, this.carData);
+            this.carData.set("apiConnection", { label: "API Connection", value: "OK", suffix: "" });
+            this.log(this.name + ": carData updated", Object.fromEntries(this.carData));
+        } catch (err) {
+            if (err instanceof SetupRequiredError) {
+                if (!this._setupLogged) {
+                    console.log(this.name + ": Setup required:\n" + err.message);
+                    this._setupLogged = true;
                 }
-                this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
-            })
-            .catch(() => {
-                console.log(this.name + ": No internet available");
-                this.carData.set("apiConnection", { label: "API Connection", value: "NO INTERNET", suffix: "" });
-                this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
-            });
+                this.carData.set("apiConnection", { label: "API Connection", value: "SETUP_REQUIRED", suffix: "" });
+            } else {
+                console.error(this.name + ": Error reading car data:", err.message || err);
+                this.carData.set("apiConnection", { label: "API Connection", value: "ERROR", suffix: "" });
+            }
+        }
+        this.sendSocketNotification("WECONNECT_CARDATA", JSON.stringify([...this.carData.entries()]));
+        this.scheduleRead(this.nextReadDelay(createdOn));
     },
 
     socketNotificationReceived(notification, payload) {
