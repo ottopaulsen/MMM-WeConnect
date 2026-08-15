@@ -161,15 +161,20 @@ module.exports = NodeHelper.create({
     nextReadDelay(createdOn) {
         const PORTAL_INTERVAL_MS = 15 * 60 * 1000;
         const BUFFER_MS          = 30 * 1000;
-        const MIN_DELAY_MS       = 60 * 1000;   // never poll more often than 1 min
-        const FALLBACK_MS        = 5 * 60 * 1000; // on error, retry in 5 min
+        const STALE_RETRY_MS     = 5 * 60 * 1000;  // car inactive – retry every 5 min
+        const FALLBACK_MS        = 5 * 60 * 1000;   // on error
         if (!createdOn) return FALLBACK_MS;
         const nextExpected = new Date(createdOn).getTime() + PORTAL_INTERVAL_MS + BUFFER_MS;
         const delay = nextExpected - Date.now();
-        const clamped = Math.max(delay, MIN_DELAY_MS);
-        const mins = Math.round(clamped / 60000);
+        if (delay <= 0) {
+            // Expected update time has already passed – car was inactive during that window.
+            // Retry in 5 min rather than hammering every minute.
+            this.log(this.name + ": Data is stale (car inactive?), retrying in 5 min");
+            return STALE_RETRY_MS;
+        }
+        const mins = Math.round(delay / 60000);
         this.log(this.name + ": Next data check in ~" + mins + " min (portal updates at " + new Date(nextExpected).toLocaleTimeString() + ")");
-        return clamped;
+        return delay;
     },
 
     async initApi() {
