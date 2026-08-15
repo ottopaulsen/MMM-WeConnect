@@ -503,19 +503,11 @@ class VwEuDataActClient {
 
 // ─── Module exports ──────────────────────────────────────────────────────────
 
-let client = null;
-
-/**
- * Login to the VW EU Data Act portal and return an API object.
- * @param {string} email    VW account email
- * @param {string} password VW account password
- * @returns {{ listVehicles, getLatestDataset }}
- */
 exports.login = function (email, password, log) {
-    client = new VwEuDataActClient(email, password, log);
+    const instance = new VwEuDataActClient(email, password, log);
     return {
-        listVehicles:      () => client.listVehicles(),
-        getLatestDataset:  (vin) => client.getLatestDataset(vin),
+        listVehicles:      () => instance.listVehicles(),
+        getLatestDataset:  (vin) => instance.getLatestDataset(vin),
     };
 };
 

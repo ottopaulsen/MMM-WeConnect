@@ -69,7 +69,7 @@ Module.register("MMM-WeConnect", {
     },
 
     socketNotificationReceived: function (notification, payload) {
-        var self = this;
+        const self = this;
         if (notification === 'WECONNECT_CARDATA') {
             if (payload != null) {
                 self.carData = JSON.parse(payload).reduce((m, [key, val]) => m.set(key, val), new Map());
@@ -88,9 +88,9 @@ Module.register("MMM-WeConnect", {
     },
 
     getDom: function () {
-        self = this;
+        const self = this;
         const wrapper = document.createElement("div");
-        svgDiv = document.createElement("div");
+        const svgDiv = document.createElement("div");
         svgDiv.setAttribute("id", "carDrawing");
         wrapper.appendChild(svgDiv);
 
@@ -131,7 +131,7 @@ Module.register("MMM-WeConnect", {
     },
 
     findPosition: function (carData) {
-        if (!carData.has("driving")) {
+        if (carData.has("driving")) {
             if (carData.get("driving").value == "YES") {
                 return this.translate("DRIVING");
             }
@@ -412,15 +412,18 @@ Module.register("MMM-WeConnect", {
         if (carData.has("charging")) {
             if (carData.get("charging").value == "CHARGING") {
                 drawing.charging.show();
-                drawing.remainingChargingTime.show();
-                drawing.remainingChargingTime.text(
-                    ""
-                    + carData.get("chargingRemainingHour").value
-                    + carData.get("chargingRemainingHour").suffix
-                    + " "
-                    + carData.get("chargingRemainingMinute").value
-                    + carData.get("chargingRemainingMinute").suffix
-                );
+                if (carData.has("chargingRemainingHour") && carData.has("chargingRemainingMinute")) {
+                    drawing.remainingChargingTime.text(
+                        ""
+                        + carData.get("chargingRemainingHour").value
+                        + carData.get("chargingRemainingHour").suffix
+                        + " "
+                        + carData.get("chargingRemainingMinute").value
+                        + carData.get("chargingRemainingMinute").suffix
+                    ).show();
+                } else {
+                    drawing.remainingChargingTime.hide();
+                }
             } else {
                 drawing.charging.hide();
                 drawing.remainingChargingTime.hide();
