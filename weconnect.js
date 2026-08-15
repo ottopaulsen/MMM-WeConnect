@@ -71,59 +71,44 @@ const authcode_re = new RegExp('&code=([^"]*)');
 
 let apiUrl = "";
 
-log = function(...args) {
-  //   console.log(args);
+log = function (...args) {
+  console.log(args);
 };
 
-extract_csrf = function(r) {
+extract_csrf = function (r) {
   return r.match(csrf_re)[1];
 };
 
-extract_login_action_url = function(r) {
-  const loginhtml = r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+extract_login_action_url = function (r) {
+  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
   return loginhtml.match(login_action_url_re)[1];
 };
 
-extract_login_action2_url = function(r) {
-  const loginhtml = r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+extract_login_action2_url = function (r) {
+  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
   return loginhtml.match(login_action_url2_re)[1];
 };
 
-extract_login_relay_state_token = function(r) {
-  const loginhtml = r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+extract_login_relay_state_token = function (r) {
+  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
   return loginhtml.match(login_relay_state_token_re)[1];
 };
 
-extract_login_hmac = function(r) {
-  const loginhtml = r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+extract_login_hmac = function (r) {
+  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
   return loginhtml.match(login_hmac_re)[1];
 };
 
-extract_login_csrf = function(r) {
-  const loginhtml = r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+extract_login_csrf = function (r) {
+  const loginhtml = r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
   return loginhtml.match(login_csrf_re)[1];
 };
 
-extract_code = function(r) {
+extract_code = function (r) {
   return r.match(authcode_re)[1];
 };
 
-build_complete_login_url = function(state) {
+build_complete_login_url = function (state) {
   return (
     COMPLETE_LOGIN_URL +
     "?p_auth=" +
@@ -132,11 +117,8 @@ build_complete_login_url = function(state) {
   );
 };
 
-remove_whitespace = function(r) {
-  return r
-    .replace(/\n/g, "")
-    .replace(/\r/g, "")
-    .replace(/ /g, "");
+remove_whitespace = function (r) {
+  return r.replace(/\n/g, "").replace(/\r/g, "").replace(/ /g, "");
 };
 
 function JSON_to_URLEncoded(element, key, list) {
@@ -161,14 +143,14 @@ function catchRedirect(uri, headers, body, method, writefile) {
       followRedirect: false,
       rejectUnauthorized: false
     })
-      .then(res => {
+      .then((res) => {
         log("Failed catching redirect: ", res.statusCode);
         if (writefile) {
           writefile(res.body);
         }
         reject("Failed to log in to We Connect (catching redirect)");
       })
-      .catch(err => {
+      .catch((err) => {
         if (err.response && err.response.headers) {
           resolve(err.response.headers.location);
         } else {
@@ -194,7 +176,7 @@ function callLandingPage(landing_page_url) {
       rejectUnauthorized: false,
       method: "GET"
     })
-      .then(res => {
+      .then((res) => {
         if (res) {
           csrf = extract_csrf(res.body);
           resolve(csrf);
@@ -203,7 +185,7 @@ function callLandingPage(landing_page_url) {
           reject("Error calling landing page. Status: " + res.statusCode);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         log("Error calling landing page: ", err);
         reject(err);
       });
@@ -222,10 +204,10 @@ function getLoginUrl(base_url, csrf, get_login_url) {
       rejectUnauthorized: false,
       method: "POST"
     })
-      .then(res => {
+      .then((res) => {
         resolve(JSON.parse(res.body).loginURL["path"]);
       })
-      .catch(err => {
+      .catch((err) => {
         log("Error getting login url: ", err);
         reject(err);
       });
@@ -325,7 +307,7 @@ function getFinalState(api_url) {
   });
 }
 
-exports.login = function(email, password, writefile) {
+exports.login = function (email, password, writefile) {
   return new Promise((resolve, reject) => {
     savedEmail = email;
     savedPassword = password;
@@ -346,23 +328,23 @@ exports.login = function(email, password, writefile) {
 
     log("Calling landing page");
     callLandingPage(LANDING_PAGE_URL)
-      .then(res => {
+      .then((res) => {
         const csrf = res;
         log("Calling getLoginUrl");
         log("Calling login url");
         return getLoginUrl(BASE_URL, csrf, GET_LOGIN_URL);
       })
-      .then(res => {
+      .then((res) => {
         const login_url = res;
         log("Calling catchRedirect");
         return catchRedirect(login_url, auth_headers, "", "GET", writefile);
       })
-      .then(res => {
+      .then((res) => {
         const login_form_url = res;
         log("Calling getLoginActionUrl");
         return getLoginActionUrl(login_form_url);
       })
-      .then(res => {
+      .then((res) => {
         login_action_url = AUTH_BASE_URL + extract_login_action_url(res.body);
         const login_relay_state_token = extract_login_relay_state_token(
           res.body
@@ -379,7 +361,7 @@ exports.login = function(email, password, writefile) {
           login_action_url
         );
       })
-      .then(res => {
+      .then((res) => {
         const login_action_url_response_data = remove_whitespace(res.body);
         try {
           login_action2_url =
@@ -399,7 +381,7 @@ exports.login = function(email, password, writefile) {
           login_action2_url
         );
       })
-      .then(res => {
+      .then((res) => {
         // Get base url
         if (res.statusCode != 200) {
           reject("Error getting base url. Status: " + res.statusCode);
@@ -434,7 +416,7 @@ exports.login = function(email, password, writefile) {
           writefile
         );
       })
-      .then(res => {
+      .then((res) => {
         if (!res) {
           log("weconnect: Failed to login (get base url).");
           reject("weconnect: Failed to login (get base url).");
@@ -445,7 +427,7 @@ exports.login = function(email, password, writefile) {
         log("Calling getFinalState");
         return getFinalState(apiUrl);
       })
-      .then(res => {
+      .then((res) => {
         log("Last login url response status: " + res.statusCode);
         const csrf = extract_csrf(res.body);
         headers["Referer"] = apiUrl;
@@ -453,7 +435,7 @@ exports.login = function(email, password, writefile) {
         log("resolving");
         resolve(this.api);
       })
-      .catch(err => {
+      .catch((err) => {
         log("rejecting");
         log("Error: ", err);
         reject(err);
@@ -461,7 +443,7 @@ exports.login = function(email, password, writefile) {
   });
 };
 
-tryApi = function(uri) {
+tryApi = function (uri) {
   return new Promise((resolve, reject) => {
     if (!apiUrl) {
       reject(
@@ -478,11 +460,11 @@ tryApi = function(uri) {
       followAllRedirects: true,
       rejectUnauthorized: false
     })
-      .then(res => {
+      .then((res) => {
         response = res;
         resolve(response);
       })
-      .catch(err => {
+      .catch((err) => {
         response = {
           statusCode: 0,
           body: err.message
@@ -492,10 +474,10 @@ tryApi = function(uri) {
   });
 };
 
-exports.api = function(uri, secondTime = false) {
+exports.api = function (uri, secondTime = false) {
   return new Promise((resolve, reject) => {
     tryApi(uri)
-      .then(response => {
+      .then((response) => {
         if (response.body == '{"errorCode":"2"}') {
           if (secondTime) {
             const msg = "Second login attempt. Failing.";
@@ -505,18 +487,18 @@ exports.api = function(uri, secondTime = false) {
           }
           console.log("weconnect token expired. Logging in again.");
           this.login(savedEmail, savedPassword)
-            .then(api => {
+            .then((api) => {
               resolve(api(uri, true));
               return;
             })
-            .catch(err => {
+            .catch((err) => {
               reject(err);
               return;
             });
         }
         resolve(response.body);
       })
-      .catch(err => {
+      .catch((err) => {
         reject(err);
       });
   });
