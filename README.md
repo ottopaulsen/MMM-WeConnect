@@ -1,8 +1,35 @@
 # MMM-WeConnect
 
-MagicMirror module for Volkswagen cars using the **EU Data Act portal** — the only currently working data source for VW Group vehicles.
+MagicMirror module for Volkswagen cars via the **EU Data Act portal** — the only working data source for VW Group vehicles after the old WeConnect portal was shut down.
 
-> ⚠️ **The old VW WeConnect portal (`portal.volkswagen-we.com`) was shut down.** This module has been rewritten to use the EU Data Act portal (`eu-data-act.drivesomethinggreater.com`).
+> ⚠️ **The old VW WeConnect portal (`portal.volkswagen-we.com`) has been shut down.** This module has been rewritten from scratch to use the EU Data Act portal (`eu-data-act.drivesomethinggreater.com`).
+
+## Screenshots
+
+Car connected and charging:
+
+![Screenshot](doc/MMM-WeConnect-Screenshot-Charging.png)
+
+Car driving:
+
+![Screenshot](doc/MMM-WeConnect-Screenshot-Driving.png)
+
+## What is displayed
+
+| Information | Available |
+|-------------|-----------|
+| Battery level (%) | ✅ (depends on car model) |
+| Estimated range | ✅ (depends on car model) |
+| Charging status (charging / not charging) | ✅ |
+| Remaining charging time | ✅ |
+| Plug connected / disconnected | ✅ |
+| Odometer | ✅ |
+| Lock status (green = locked, red = unlocked) | ✅ |
+| Outside temperature | ✅ |
+| Time since last data from portal | ✅ |
+| GPS position | ❌ (not available via EU Data Act) |
+
+Data is updated by the portal approximately every 15 minutes **when the car is active** (driving, charging, or when you trigger a sync from the VW app). The module polls the portal automatically right after new data is expected.
 
 ## One-time portal setup (required)
 
@@ -11,12 +38,23 @@ Before the module works, you must activate continuous data delivery once in a br
 1. Open **[https://eu-data-act.drivesomethinggreater.com/](https://eu-data-act.drivesomethinggreater.com/)**
 2. Log in with your **VW account** (same email/password as the VW app)
 3. Go to **Data clusters → Vehicle overview**
-4. Click **Connect your car** if your VIN is not already listed
+4. Click **Connect your car** if your car is not already listed
 5. Click **Get customised data** → select *All data*, frequency *15 minutes*
 
-The portal will then start generating datasets every ~15 minutes **when your car is active** (driving, charging, or when you trigger a sync from the VW app).
+The portal will then start generating datasets every ~15 minutes when the car is active.
+
+## Installation
+
+```bash
+cd MagicMirror/modules
+git clone https://github.com/ottopaulsen/MMM-WeConnect
+cd MMM-WeConnect
+npm install
+```
 
 ## Configuration
+
+Add this to your `MagicMirror/config/config.js`:
 
 ```javascript
 {
@@ -26,7 +64,6 @@ The portal will then start generating datasets every ~15 minutes **when your car
         email: 'your-vw-account@email.com',
         password: 'your-vw-password',
         vin: 'WVWZZZ1JZ3W000000',  // optional – auto-discovered if omitted
-        refreshIntervalSeconds: 900, // 15 minutes (data updates at this rate)
         size: 300,
         showDistance: true,
         showBatteryPercent: true,
@@ -35,172 +72,69 @@ The portal will then start generating datasets every ~15 minutes **when your car
         showDriving: true,
         showBattery: true,
         logging: false,
+        colors: {
+            car: "gray",
+            text: "#ccc",
+            rangeText: "black",
+            chargingSign: "yellow",
+            lightsOn: "yellow",
+            lightsOff: "#222",
+            wheels: "#222"
+        },
+        batteryColors: [
+            { upTo: 20, background: "pink", forground: "red", text: "yellow" },
+            { upTo: 50, background: "pink", forground: "orange", text: "yellow" },
+            { upTo: 75, background: "#666", forground: "blue", text: "yellow" },
+            { upTo: 100, background: "#666", forground: "green", text: "yellow" }
+        ],
+        positions: [
+            { name: "Home", lat: 63.430484, lon: 10.394966, marginMeters: 50 }
+        ],
+        homePosition: "Home"
     }
 }
 ```
 
-## Notes
+### Configuration parameters
 
-- Data is available **every ~15 minutes** when the car is active (driving, charging). Parked cars may not produce data.
-- GPS position is **not** available via the EU Data Act portal — the position display has been removed.
-- To force a data refresh, open the VW app and trigger a sync.
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `email` | — | Your VW account email address |
+| `password` | — | Your VW account password |
+| `vin` | *(auto)* | Vehicle VIN number. Auto-discovered if omitted |
+| `size` | `300` | Size of the SVG drawing in pixels |
+| `showDistance` | `true` | Show total odometer reading |
+| `showBatteryPercent` | `true` | Show battery percentage |
+| `showRange` | `true` | Show estimated range |
+| `showBattery` | `true` | Show battery indicator bar |
+| `showConnectionStatus` | `true` | Show time since last data update |
+| `showDriving` | `true` | Show driving status (lights/driver figure) |
+| `showPosition` | `true` | Show position name (GPS-based — not currently available) |
+| `logging` | `false` | Write detailed data to the console |
+| `positions` | `[]` | List of known positions (name, coordinates, margin in metres) |
+| `homePosition` | `""` | Name of the home position (used for distance display) |
 
----
+## Security
 
-## If you have information on how to access the API, please create an issue and supply any useful information.
+**Keep your VW password secret!** It is stored in plain text in `config.js` — do not share this file with others.
 
+## Dependencies
 
+The module has only one external dependency:
 
-#
+- [`svg.js`](https://svgjs.dev/) — for the SVG car drawing
 
-
-# MMM We Connect
-
-Module for [MagicMirror](https://github.com/MichMich/MagicMirror/) showing data from your car using We Connect from Volkswagen, formerly known as Car-Net.
-
-The module shows a car sketch with information whether the car is connected to charging cable or not, charging or not, or if it is driving or parked. Based on configuration, it may also show where the car is parked, or how far away from home it is parked. It also shows how much energy is on the battery, end estimated range, as well as the total distance counter of the car.
-
-The solution is using the We Connect login page in order to get a key, and is after that using an API for retrieving data, the same API as the We Connect app is using. Unfortunately the login procedure has do be done every time data is fetched in order to get refreshed data, so refresh should not be done too often.
-
-Of course, you must have a We Connect subscription with username and password, and you should log in to the [We Connect portal](https://www.portal.volkswagen-we.com/portal) before using this module.
-
-I have only tested this with my eGolf, and it may behave differently with other models. I assume it also may behave a little different in other countries than Norway, where I have tested it.
-
-Feel free to help adapting it to other models.
-
-Here are my other [modules for MagicMirror](https://github.com/ottopaulsen/magic).
-
-## Screenshot
-
-The car is connected and charging:
-
-![Screenshot](doc/MMM-WeConnect-Screenshot-Charging.png)
-
-The car is driving:
-
-![Screenshot](doc/MMM-WeConnect-Screenshot-Driving.png)
-
-## Installation
-
-Go to your `MagicMirror/modules` folder and write
-
-    git clone https://github.com/ottopaulsen/MMM-WeConnect
-    cd MMM-WeConnect
-    npm install
-
-## Configuration
-
-Here is an example configuration. Put it in the `MagicMirror/config/config.js` file:
-
-```javascript
-    {
-        module: 'MMM-WeConnect',
-        position: 'bottom_left',
-        config: {
-            email: '<we-connect.username>',
-            password: '<we-connect-password>',
-            refreshIntervalSeconds: 180,
-            size: 300, // This is the size of the drawing
-            showDistance: true,
-            showPosition: true,
-            showBatteryPercent: true,
-            showRange: true,
-            showConnectionStatus: true,
-            showDriving: true,
-            showBattery: true,
-            logging: false, // Write some data to console.log()
-            colors: {
-                car: "gray",
-                text: "#ccc",
-                rangeText: "black",
-                chargingSign: "yellow",
-                lightsOn: "yellow",
-                lightsOff: "#222",
-                wheels: "#222"
-            },
-            batteryColors: [
-                { upTo: 20, background: "pink", forground: "red", text: "yellow" },
-                { upTo: 50, background: "pink", forground: "orange", text: "yellow" },
-                { upTo: 75, background: "#666", forground: "blue", text: "yellow" },
-                { upTo: 100, background: "#666", forground: "green", text: "yellow" }
-            ],
-            positions: [
-                {name: "Hjemme", lat: 63.430484,  lon: 10.394966, marginMeters: 50},
-                {name: "Trondheim Spektrum", lat: 63.426559, lon: 10.376309, marginMeters: 100},
-                {name: "City Lade", lat: 63.444426, lon: 10.446577, marginMeters: 200}
-            ],
-            homePosition: "Hjemme"
-        }
-    },
-```
-
-Add entries for the positions you want to show with specific text (name).
-
-The homePosition should be set to the name of the position that represents home. This makes it possible to show how far away from home the car is, when it is not at any known position.
-
-If you want other languages, add your own translation file in the translations folder.
-
-The logging can be set to `true` to output data to the console. It can be useful for example to get positions, but you can easily also use Google Maps for this.
-
-### Privacy
-
-Please respect peoples privacy rights, and do not show position unless all drivers and passangers agree to this. This is your responsibility.
-
-### Password security
-
-You must keep your We Connect username and password secret!
-If anyone gets hold of them, they can potentially steal your car, or do other harm!
-
-They are only used on the login procedure, but they persist in the configuration and may turn up in logs!
-
-### CSS Styling
-
-If you want to use CSS to style the drawing, the element id's below are available, but I have not really tried, and I do not know if it is very convenient.
-
-```
-car
-left_wheel
-right_wheel
-car_body
-left_light
-right_light
-cable_connected
-cable_disconnected
-charger_box
-wall
-charging
-battery
-battery_body
-battery_top
-battery_level
-driver
-driver_head
-antenna
-antenna_top
-distance
-battery_percent
-range
-remaining_charging_time
-position
-last_connection
-```
+All HTTP calls, cookie handling and network checks use built-in Node.js modules (`fetch`, `dns`, `zlib`).
 
 ## Troubleshooting
 
-The login procedure used to log in to We Connect is tricky, and often fails. The first thing to try when it fails is to log in from a normal browser. Some times there are one-time issues like for example a consent question, that must be answered. After that is done it might just work again.
+Set `logging: true` in the configuration to see detailed data in the console, including all field values from the portal.
 
-## Contributions
+If the module displays *"Setup required – see log"*, it means you have not completed the one-time setup in the portal (see above).
 
-Grate thanks to [reneboer](https://github.com/reneboer), [Mirarkitty](https://github.com/Mirarkitty), [jaybora](https://github.com/jaybora), [Sneak-L8](https://github.com/Sneak-L8), [youpixel](https://github.com/youpixel), [birgersp](https://github.com/birgersp) and many others contributing to get the login procedure working, and for other information about the API. I specially leaned on [reneboer/python-carnet-client](https://github.com/reneboer/python-carnet-client) to get my Javascript version working.
+## Contributing
 
-If you want to help improving this module, that would be nice. Pull requests are welcome, but it may be better to create issues first, so we can discuss what kind of changes to make, and how to design the solution.
+Pull requests are welcome. Consider opening an issue first to discuss the changes you have in mind.
 
-Here are some improvements I have been thinking of, but not started:
+Here are my other [MagicMirror modules](https://github.com/ottopaulsen/magic).
 
-- Choose to show information in table or other form, instead of the drawing.
-- Improve the drawing. Not my profession...
-- Better support for other models, for example hybrid cars. I am not going to do that myself.
-- Show how long time or distance until next service.
-- Warn when it is getting close to service time.
-
-If you find bugs, please investigate them by turning on logging in the config, and create an issue containing the logged information, especially the information retrieved by node_helper from the We Connect API. NB! Keep your passward safe!
