@@ -168,7 +168,7 @@ module.exports = NodeHelper.create({
         const delay = nextExpected - Date.now();
         const clamped = Math.max(delay, MIN_DELAY_MS);
         const mins = Math.round(clamped / 60000);
-        console.log(this.name + ": Next data check in ~" + mins + " min (portal updates at " + new Date(nextExpected).toLocaleTimeString() + ")");
+        this.log(this.name + ": Next data check in ~" + mins + " min (portal updates at " + new Date(nextExpected).toLocaleTimeString() + ")");
         return clamped;
     },
 
@@ -176,8 +176,8 @@ module.exports = NodeHelper.create({
         if (this.api) return;
         const { email, password } = this.config;
         if (!email || !password) throw new Error("No email/password configured – add email and password to your MMM-WeConnect config");
-        // Always log weconnect internals so login issues are visible
-        const log = (...args) => console.log(this.name + ":", ...args);
+        // Pass this.log to weconnect so HTTP call verbosity follows the logging config
+        const log = (...args) => this.log(...args);
         this.api = weconnect.login(email, password, log);
     },
 
@@ -216,9 +216,9 @@ module.exports = NodeHelper.create({
             createdOn = dataset._createdOn;
 
             this._setupLogged = false; // reset if data flows again
-            // Log complete dataset for inspection
+            // Log complete dataset only when logging is enabled (verbose – 50+ lines)
             const { _meta, _datasetName, _createdOn, ...dataFields } = dataset;
-            console.log(this.name + ": Full dataset (" + _createdOn + "):\n" +
+            this.log(this.name + ": Full dataset (" + _createdOn + "):\n" +
                 JSON.stringify(dataFields, null, 2));
             mapDatasetToCarData(dataset, this.carData);
             this.carData.set("apiConnection", { label: "API Connection", value: "OK", suffix: "" });
